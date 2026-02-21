@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
     name = "ccsearch",
     about = "Hybrid search CLI for Claude Code chat sessions",
     version,
-    after_help = "Examples:\n  ccsearch search \"authentication bug\"\n  ccsearch search \"refactor\" --days 7 --no-tui\n  ccsearch index --force\n  ccsearch list --days 30 --json"
+    after_help = "Examples:\n  ccsearch \"authentication bug\"\n  ccsearch search \"refactor\" --days 7 --no-tui\n  ccsearch index --force\n  ccsearch list --days 30 --json"
 )]
 pub struct Cli {
     #[command(subcommand)]

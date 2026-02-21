@@ -47,7 +47,10 @@ cargo install --git https://github.com/madzarm/ccsearch.git
 # Index all your Claude Code sessions
 ccsearch index
 
-# Search for sessions about authentication
+# Search (shorthand — no subcommand needed)
+ccsearch "authentication bug"
+
+# Equivalent explicit form
 ccsearch search "authentication bug"
 
 # Search with plain text output (no TUI)
@@ -65,9 +68,9 @@ ccsearch config
 
 ## Commands
 
-### `ccsearch search <query>`
+### `ccsearch <query>` / `ccsearch search <query>`
 
-Primary command. Searches sessions and shows an interactive TUI picker.
+Primary command. Searches sessions and shows an interactive TUI picker. The `search` subcommand is optional — `ccsearch "my query"` works directly.
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -128,7 +131,7 @@ Shows current configuration. Creates default config at `~/.ccsearch/config.toml`
 ## Architecture
 
 ```
-CLI (clap) ──> Indexer ──> SQLite DB (FTS5 + sqlite-vec)
+CLI (clap) ──> Indexer ──> SQLite DB (FTS5 + embeddings)
     │                              │
     └──> Searcher ◄────────────────┘
              │
