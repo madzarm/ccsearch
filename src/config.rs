@@ -26,6 +26,10 @@ pub struct Config {
     /// Set to 0 to disable recency boosting.
     #[serde(default = "default_recency_halflife")]
     pub recency_halflife: f64,
+
+    /// Exclude sessions whose project path contains any of these strings
+    #[serde(default)]
+    pub exclude_projects: Vec<String>,
 }
 
 fn default_bm25_weight() -> f64 {
@@ -60,6 +64,7 @@ impl Default for Config {
             default_days: default_days(),
             max_text_chars: default_max_text_chars(),
             recency_halflife: default_recency_halflife(),
+            exclude_projects: Vec::new(),
         }
     }
 }

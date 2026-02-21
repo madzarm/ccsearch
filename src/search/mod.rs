@@ -28,6 +28,7 @@ pub fn hybrid_search(
     vec_weight: f64,
     rrf_k: f64,
     recency_halflife: f64,
+    exclude_projects: &[String],
 ) -> Result<Vec<SearchResult>> {
     // BM25 search
     let bm25_results = bm25::search(db, query, limit * 2)?;
@@ -48,6 +49,13 @@ pub fn hybrid_search(
     let mut results = Vec::new();
     for rrf_result in fused.into_iter().take(limit * 2) {
         if let Ok(Some(session)) = db.get_session(&rrf_result.session_id) {
+            // Skip excluded projects
+            if exclude_projects.iter().any(|ex| {
+                session.project_path.to_lowercase().contains(&ex.to_lowercase())
+            }) {
+                continue;
+            }
+
             let score = if recency_halflife > 0.0 {
                 let age_days = chrono::DateTime::parse_from_rfc3339(&session.modified_at)
                     .map(|dt| (now - dt.to_utc()).num_hours() as f64 / 24.0)

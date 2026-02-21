@@ -74,6 +74,7 @@ fn cmd_search(args: cli::SearchArgs) -> Result<()> {
         args.vec_weight,
         config.rrf_k,
         config.recency_halflife,
+        &config.exclude_projects,
     )?;
 
     if results.is_empty() {
