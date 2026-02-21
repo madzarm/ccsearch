@@ -1,7 +1,7 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
@@ -18,15 +18,7 @@ pub fn render_results_list(
 ) {
     let items: Vec<ListItem> = results
         .iter()
-        .enumerate()
-        .map(|(i, result)| {
-            let is_selected = i == selected;
-            let style = if is_selected {
-                Theme::selected()
-            } else {
-                Theme::normal()
-            };
-
+        .map(|result| {
             // Title line: summary or first prompt
             let title = result
                 .session
@@ -59,13 +51,15 @@ pub fn render_results_list(
                 Span::styled(msgs, Theme::subtitle()),
             ]);
 
-            let title_line = Line::from(vec![Span::styled(format!(" {} ", title), style)]);
+            let title_line = Line::from(vec![Span::styled(format!(" {} ", title), Theme::normal())]);
 
             let separator = Line::from("");
 
             ListItem::new(vec![meta_line, title_line, separator])
         })
         .collect();
+
+    let mut list_state = ListState::default().with_selected(Some(selected));
 
     let list = List::new(items)
         .block(
@@ -79,7 +73,7 @@ pub fn render_results_list(
         )
         .highlight_style(Theme::selected());
 
-    f.render_widget(list, area);
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 /// Renders the preview pane on the right
