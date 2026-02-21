@@ -25,6 +25,7 @@ pub struct App {
     pub filter_mode: bool,
     pub should_quit: bool,
     pub selected_session_id: Option<String>,
+    pub selected_project_path: Option<String>,
 }
 
 impl App {
@@ -37,6 +38,7 @@ impl App {
             filter_mode: false,
             should_quit: false,
             selected_session_id: None,
+            selected_project_path: None,
         }
     }
 
@@ -71,8 +73,8 @@ impl App {
     }
 }
 
-/// Runs the interactive TUI picker and returns the selected session ID
-pub fn run(results: Vec<SearchResult>, query: &str) -> Result<Option<String>> {
+/// Runs the interactive TUI picker and returns (session_id, project_path)
+pub fn run(results: Vec<SearchResult>, query: &str) -> Result<Option<(String, String)>> {
     if results.is_empty() {
         eprintln!("No results found for \"{}\"", query);
         return Ok(None);
@@ -93,7 +95,10 @@ pub fn run(results: Vec<SearchResult>, query: &str) -> Result<Option<String>> {
     stdout().execute(LeaveAlternateScreen)?;
 
     result?;
-    Ok(app.selected_session_id)
+    match (app.selected_session_id, app.selected_project_path) {
+        (Some(sid), Some(pp)) => Ok(Some((sid, pp))),
+        _ => Ok(None),
+    }
 }
 
 fn run_event_loop(
@@ -187,6 +192,8 @@ fn run_event_loop(
                         KeyCode::Enter => {
                             if let Some(result) = filtered_owned.get(app.selected) {
                                 app.selected_session_id = Some(result.session_id.clone());
+                                app.selected_project_path =
+                                    Some(result.session.project_path.clone());
                                 app.should_quit = true;
                             }
                         }
