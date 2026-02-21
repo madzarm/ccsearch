@@ -17,13 +17,35 @@ use db::Database;
 
 fn main() -> Result<()> {
     env_logger::init();
-    let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Search(args) => cmd_search(args),
-        Commands::Index(args) => cmd_index(args),
-        Commands::List(args) => cmd_list(args),
-        Commands::Config => cmd_config(),
+    // Try parsing as normal CLI with subcommands first
+    match Cli::try_parse() {
+        Ok(cli) => match cli.command {
+            Commands::Search(args) => cmd_search(args),
+            Commands::Index(args) => cmd_index(args),
+            Commands::List(args) => cmd_list(args),
+            Commands::Config => cmd_config(),
+        },
+        Err(_) => {
+            // If subcommand parsing fails, treat all args as a search query
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            if args.is_empty() || args[0].starts_with('-') {
+                // No query or flag-only — show help
+                Cli::parse();
+                unreachable!()
+            }
+            let query = args.join(" ");
+            cmd_search(cli::SearchArgs {
+                query,
+                days: 30,
+                project: None,
+                limit: 20,
+                no_tui: false,
+                json: false,
+                bm25_weight: 1.0,
+                vec_weight: 1.0,
+            })
+        }
     }
 }
 
