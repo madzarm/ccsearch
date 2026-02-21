@@ -59,6 +59,12 @@ fi
 
 chmod +x "${INSTALL_DIR}/ccsearch"
 
+# Ad-hoc sign on macOS to avoid Gatekeeper killing the binary
+if [ "${OS}" = "Darwin" ]; then
+    codesign -s - "${INSTALL_DIR}/ccsearch" 2>/dev/null || true
+    xattr -d com.apple.quarantine "${INSTALL_DIR}/ccsearch" 2>/dev/null || true
+fi
+
 echo "ccsearch ${TAG} installed to ${INSTALL_DIR}/ccsearch"
 echo ""
 echo "Run 'ccsearch --help' to get started."

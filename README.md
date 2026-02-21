@@ -2,6 +2,8 @@
 
 Hybrid search CLI for Claude Code chat sessions. Finds past conversations using BM25 keyword search + vector embeddings + Reciprocal Rank Fusion, presents results in an interactive TUI picker, and auto-resumes the selected session via `claude --resume`.
 
+![ccsearch demo](ccsearch.gif)
+
 ## Why?
 
 Claude Code's built-in `--resume` picker only shows the last ~50 sessions with no search. Finding a specific past conversation means scrolling through a flat list. **ccsearch** fixes this with fast, intelligent search across all your sessions.
