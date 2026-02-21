@@ -4,11 +4,24 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// Top-level structure of sessions-index.json
+#[derive(Debug, Deserialize)]
+pub struct SessionIndex {
+    #[serde(default)]
+    pub entries: Vec<SessionIndexEntry>,
+}
+
 /// Represents a single entry in sessions-index.json
 #[derive(Debug, Deserialize)]
 pub struct SessionIndexEntry {
     #[serde(rename = "sessionId")]
     pub session_id: String,
+
+    #[serde(rename = "fullPath", default)]
+    pub full_path: Option<String>,
+
+    #[serde(rename = "firstPrompt", default)]
+    pub first_prompt: Option<String>,
 
     #[serde(default)]
     pub summary: Option<String>,
@@ -19,11 +32,23 @@ pub struct SessionIndexEntry {
     #[serde(rename = "projectPath", default)]
     pub project_path: Option<String>,
 
+    #[serde(rename = "messageCount", default)]
+    pub message_count: Option<usize>,
+
+    #[serde(default)]
+    pub created: Option<String>,
+
+    #[serde(default)]
+    pub modified: Option<String>,
+
     #[serde(rename = "createdAt", default)]
     pub created_at: Option<String>,
 
     #[serde(rename = "lastActivityAt", default)]
     pub last_activity_at: Option<String>,
+
+    #[serde(rename = "fileMtime", default)]
+    pub file_mtime: Option<u64>,
 
     #[serde(rename = "gitBranch", default)]
     pub git_branch: Option<String>,
@@ -70,9 +95,9 @@ pub struct ParsedSession {
 pub fn parse_session_index(path: &Path) -> Result<Vec<SessionIndexEntry>> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Failed to read {:?}", path))?;
-    let entries: Vec<SessionIndexEntry> = serde_json::from_str(&content)
+    let index: SessionIndex = serde_json::from_str(&content)
         .with_context(|| format!("Failed to parse session index {:?}", path))?;
-    Ok(entries)
+    Ok(index.entries)
 }
 
 /// Parses a JSONL conversation file and extracts text content
@@ -131,7 +156,8 @@ pub fn parse_conversation_jsonl(
                 full_text.push_str(prefix);
 
                 if text.len() > remaining {
-                    full_text.push_str(&text[..remaining]);
+                    let truncated: String = text.chars().take(remaining).collect();
+                    full_text.push_str(&truncated);
                 } else {
                     full_text.push_str(&text);
                 }
