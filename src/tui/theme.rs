@@ -24,10 +24,6 @@ impl Theme {
         Style::default().fg(Color::Gray)
     }
 
-    pub fn score() -> Style {
-        Style::default().fg(Color::Yellow)
-    }
-
     pub fn project() -> Style {
         Style::default().fg(Color::Green)
     }

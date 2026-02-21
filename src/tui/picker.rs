@@ -38,28 +38,32 @@ pub fn render_results_list(
                 .take(60)
                 .collect::<String>();
 
-            // Metadata line
             let date = format_date(&result.session.created_at);
             let project = short_project_path(&result.session.project_path);
-            let branch = result.session.git_branch.as_deref().unwrap_or("");
+            let branch = result
+                .session
+                .git_branch
+                .as_deref()
+                .map(|b| format!(" [{}]", b))
+                .unwrap_or_default();
+            let msgs = result
+                .session
+                .message_count
+                .map(|c| format!(" ({} msgs)", c))
+                .unwrap_or_default();
 
-            let score_str = format!("{:.4}", result.score);
+            let meta_line = Line::from(vec![
+                Span::styled(format!(" {}", date), Theme::date()),
+                Span::styled(format!("  {}", project), Theme::project()),
+                Span::styled(branch, Theme::branch()),
+                Span::styled(msgs, Theme::subtitle()),
+            ]);
 
             let title_line = Line::from(vec![Span::styled(format!(" {} ", title), style)]);
 
-            let meta_spans = vec![
-                Span::styled(format!("  {} ", date), Theme::date()),
-                Span::styled(format!("{} ", project), Theme::project()),
-                if !branch.is_empty() {
-                    Span::styled(format!("[{}] ", branch), Theme::branch())
-                } else {
-                    Span::raw("")
-                },
-                Span::styled(format!("score:{}", score_str), Theme::score()),
-            ];
-            let meta_line = Line::from(meta_spans);
+            let separator = Line::from("");
 
-            ListItem::new(vec![title_line, meta_line])
+            ListItem::new(vec![meta_line, title_line, separator])
         })
         .collect();
 
@@ -91,20 +95,24 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
 
         // Metadata
         lines.push(Line::from(vec![
-            Span::styled("Session: ", Theme::subtitle()),
+            Span::styled("Session:  ", Theme::subtitle()),
             Span::raw(&result.session_id),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("Project: ", Theme::subtitle()),
+            Span::styled("Project:  ", Theme::subtitle()),
             Span::styled(&result.session.project_path, Theme::project()),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("Created: ", Theme::subtitle()),
-            Span::styled(&result.session.created_at, Theme::date()),
+            Span::styled("Created:  ", Theme::subtitle()),
+            Span::styled(format_date(&result.session.created_at), Theme::date()),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Modified: ", Theme::subtitle()),
+            Span::styled(format_date(&result.session.modified_at), Theme::date()),
         ]));
         if let Some(ref branch) = result.session.git_branch {
             lines.push(Line::from(vec![
-                Span::styled("Branch:  ", Theme::subtitle()),
+                Span::styled("Branch:   ", Theme::subtitle()),
                 Span::styled(branch, Theme::branch()),
             ]));
         }
@@ -114,21 +122,6 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
                 Span::raw(count.to_string()),
             ]));
         }
-        lines.push(Line::from(vec![
-            Span::styled("Score: ", Theme::subtitle()),
-            Span::styled(format!("{:.6}", result.score), Theme::score()),
-            Span::raw(format!(
-                " (BM25: {}, Vec: {})",
-                result
-                    .bm25_rank
-                    .map(|r| r.to_string())
-                    .unwrap_or_else(|| "-".into()),
-                result
-                    .vec_rank
-                    .map(|r| r.to_string())
-                    .unwrap_or_else(|| "-".into()),
-            )),
-        ]));
 
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -210,12 +203,23 @@ fn extract_snippet(text: &str, query: &str, max_chars: usize) -> String {
         }
     }
 
-    let start = match best_pos {
+    let start_byte = match best_pos {
         Some(pos) => pos.saturating_sub(100),
         None => 0,
     };
 
-    let end = (start + max_chars).min(text.len());
+    // Snap to char boundaries
+    let start = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= start_byte)
+        .unwrap_or(0);
+    let end = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .find(|&i| i >= start + max_chars)
+        .unwrap_or(text.len());
+
     let snippet = &text[start..end];
 
     let mut result = String::new();
