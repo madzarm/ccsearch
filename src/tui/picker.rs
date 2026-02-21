@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use super::theme::Theme;
+use super::TimeFilter;
 use crate::search::SearchResult;
 
 /// Renders the search results list on the left
@@ -164,12 +165,14 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
 }
 
 /// Renders the help bar at the bottom
-pub fn render_help_bar(f: &mut Frame, area: Rect) {
+pub fn render_help_bar(f: &mut Frame, area: Rect, time_filter: TimeFilter) {
     let help = Line::from(vec![
         Span::styled(" ↑/↓ ", Theme::title()),
         Span::styled("Navigate  ", Theme::help_text()),
         Span::styled(" Enter ", Theme::title()),
-        Span::styled("Resume session  ", Theme::help_text()),
+        Span::styled("Resume  ", Theme::help_text()),
+        Span::styled(" Tab ", Theme::title()),
+        Span::styled(format!("Time: {}  ", time_filter.label()), Theme::help_text()),
         Span::styled(" / ", Theme::title()),
         Span::styled("Filter  ", Theme::help_text()),
         Span::styled(" q/Esc ", Theme::title()),

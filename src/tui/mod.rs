@@ -17,6 +17,44 @@ use std::io::stdout;
 
 use crate::search::SearchResult;
 
+/// Time range filter for results
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimeFilter {
+    All,
+    Day,
+    Week,
+    Month,
+}
+
+impl TimeFilter {
+    pub fn next(self) -> Self {
+        match self {
+            Self::All => Self::Day,
+            Self::Day => Self::Week,
+            Self::Week => Self::Month,
+            Self::Month => Self::All,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Day => "24h",
+            Self::Week => "7d",
+            Self::Month => "30d",
+        }
+    }
+
+    pub fn max_age_hours(self) -> Option<i64> {
+        match self {
+            Self::All => None,
+            Self::Day => Some(24),
+            Self::Week => Some(24 * 7),
+            Self::Month => Some(24 * 30),
+        }
+    }
+}
+
 /// TUI application state
 pub struct App {
     pub results: Vec<SearchResult>,
@@ -25,6 +63,7 @@ pub struct App {
     pub list_state: ListState,
     pub filter: String,
     pub filter_mode: bool,
+    pub time_filter: TimeFilter,
     pub should_quit: bool,
     pub selected_session_id: Option<String>,
     pub selected_project_path: Option<String>,
@@ -39,6 +78,7 @@ impl App {
             list_state: ListState::default().with_selected(Some(0)),
             filter: String::new(),
             filter_mode: false,
+            time_filter: TimeFilter::All,
             should_quit: false,
             selected_session_id: None,
             selected_project_path: None,
@@ -51,16 +91,32 @@ impl App {
         self.list_state.select(Some(index));
     }
 
-    /// Returns filtered results based on current filter
+    /// Returns filtered results based on text filter and time filter
     pub fn filtered_results(&self) -> Vec<&SearchResult> {
-        if self.filter.is_empty() {
-            self.results.iter().collect()
-        } else {
-            let lower_filter = self.filter.to_lowercase();
-            self.results
-                .iter()
-                .filter(|r| {
-                    r.session
+        let now = chrono::Utc::now();
+        let max_age = self.time_filter.max_age_hours();
+
+        self.results
+            .iter()
+            .filter(|r| {
+                // Time filter
+                if let Some(max_hours) = max_age {
+                    let age_ok = chrono::DateTime::parse_from_rfc3339(&r.session.modified_at)
+                        .map(|dt| {
+                            let hours = (now - dt.to_utc()).num_hours();
+                            hours <= max_hours
+                        })
+                        .unwrap_or(true);
+                    if !age_ok {
+                        return false;
+                    }
+                }
+
+                // Text filter
+                if !self.filter.is_empty() {
+                    let lower_filter = self.filter.to_lowercase();
+                    return r
+                        .session
                         .summary
                         .as_deref()
                         .unwrap_or("")
@@ -75,10 +131,12 @@ impl App {
                         || r.session
                             .project_path
                             .to_lowercase()
-                            .contains(&lower_filter)
-                })
-                .collect()
-        }
+                            .contains(&lower_filter);
+                }
+
+                true
+            })
+            .collect()
     }
 }
 
@@ -143,7 +201,7 @@ fn run_event_loop(
             picker::render_preview(f, main_chunks[1], selected_result, &app.query);
 
             // Help bar
-            picker::render_help_bar(f, chunks[1]);
+            picker::render_help_bar(f, chunks[1], app.time_filter);
         })?;
 
         if app.should_quit {
@@ -206,6 +264,10 @@ fn run_event_loop(
                                     Some(result.session.project_path.clone());
                                 app.should_quit = true;
                             }
+                        }
+                        KeyCode::Tab => {
+                            app.time_filter = app.time_filter.next();
+                            app.select(0);
                         }
                         KeyCode::Char('/') => {
                             app.filter_mode = true;
