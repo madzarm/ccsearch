@@ -10,6 +10,7 @@ use crossterm::{
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::CrosstermBackend,
+    widgets::ListState,
     Terminal,
 };
 use std::io::stdout;
@@ -21,6 +22,7 @@ pub struct App {
     pub results: Vec<SearchResult>,
     pub query: String,
     pub selected: usize,
+    pub list_state: ListState,
     pub filter: String,
     pub filter_mode: bool,
     pub should_quit: bool,
@@ -34,12 +36,19 @@ impl App {
             results,
             query,
             selected: 0,
+            list_state: ListState::default().with_selected(Some(0)),
             filter: String::new(),
             filter_mode: false,
             should_quit: false,
             selected_session_id: None,
             selected_project_path: None,
         }
+    }
+
+    /// Update selected index and sync list_state
+    pub fn select(&mut self, index: usize) {
+        self.selected = index;
+        self.list_state.select(Some(index));
     }
 
     /// Returns filtered results based on current filter
@@ -125,7 +134,7 @@ fn run_event_loop(
                 f,
                 main_chunks[0],
                 &filtered_owned,
-                app.selected,
+                &mut app.list_state,
                 &app.query,
             );
 
@@ -155,18 +164,18 @@ fn run_event_loop(
                         KeyCode::Esc => {
                             app.filter_mode = false;
                             app.filter.clear();
-                            app.selected = 0;
+                            app.select(0);
                         }
                         KeyCode::Enter => {
                             app.filter_mode = false;
                         }
                         KeyCode::Backspace => {
                             app.filter.pop();
-                            app.selected = 0;
+                            app.select(0);
                         }
                         KeyCode::Char(c) => {
                             app.filter.push(c);
-                            app.selected = 0;
+                            app.select(0);
                         }
                         _ => {}
                     }
@@ -177,16 +186,17 @@ fn run_event_loop(
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             if filtered_len > 0 {
-                                app.selected = (app.selected + 1) % filtered_len;
+                                app.select((app.selected + 1) % filtered_len);
                             }
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
                             if filtered_len > 0 {
-                                app.selected = if app.selected == 0 {
+                                let new = if app.selected == 0 {
                                     filtered_len - 1
                                 } else {
                                     app.selected - 1
                                 };
+                                app.select(new);
                             }
                         }
                         KeyCode::Enter => {
@@ -201,11 +211,11 @@ fn run_event_loop(
                             app.filter_mode = true;
                         }
                         KeyCode::Home | KeyCode::Char('g') => {
-                            app.selected = 0;
+                            app.select(0);
                         }
                         KeyCode::End | KeyCode::Char('G') => {
                             if filtered_len > 0 {
-                                app.selected = filtered_len - 1;
+                                app.select(filtered_len - 1);
                             }
                         }
                         _ => {}

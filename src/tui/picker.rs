@@ -13,7 +13,7 @@ pub fn render_results_list(
     f: &mut Frame,
     area: Rect,
     results: &[SearchResult],
-    selected: usize,
+    list_state: &mut ListState,
     query: &str,
 ) {
     let items: Vec<ListItem> = results
@@ -59,8 +59,6 @@ pub fn render_results_list(
         })
         .collect();
 
-    let mut list_state = ListState::default().with_selected(Some(selected));
-
     let list = List::new(items)
         .block(
             Block::default()
@@ -73,7 +71,7 @@ pub fn render_results_list(
         )
         .highlight_style(Theme::selected());
 
-    f.render_stateful_widget(list, area, &mut list_state);
+    f.render_stateful_widget(list, area, list_state);
 }
 
 /// Renders the preview pane on the right
