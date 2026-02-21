@@ -36,11 +36,9 @@ impl Theme {
         Style::default().fg(Color::Magenta)
     }
 
-    #[allow(dead_code)]
     pub fn highlight() -> Style {
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Yellow)
+            .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     }
 

@@ -16,6 +16,7 @@ pub fn render_results_list(
     results: &[SearchResult],
     list_state: &mut ListState,
     query: &str,
+    time_filter: TimeFilter,
 ) {
     let items: Vec<ListItem> = results
         .iter()
@@ -60,15 +61,24 @@ pub fn render_results_list(
         })
         .collect();
 
+    let time_label = match time_filter {
+        TimeFilter::All => String::new(),
+        _ => format!(" [{}]", time_filter.label()),
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Theme::border())
-                .title(Span::styled(
-                    format!(" Results for \"{}\" ({}) ", query, results.len()),
-                    Theme::title(),
-                )),
+                .title(Line::from(vec![
+                    Span::styled(
+                        format!(" \"{}\" ({}) ", query, results.len()),
+                        Theme::title(),
+                    ),
+                    Span::styled(time_label, Theme::highlight()),
+                    Span::styled(" (tab to cycle) ", Theme::subtitle()),
+                ])),
         )
         .highlight_style(Theme::selected());
 
@@ -165,14 +175,12 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
 }
 
 /// Renders the help bar at the bottom
-pub fn render_help_bar(f: &mut Frame, area: Rect, time_filter: TimeFilter) {
+pub fn render_help_bar(f: &mut Frame, area: Rect) {
     let help = Line::from(vec![
         Span::styled(" ↑/↓ ", Theme::title()),
         Span::styled("Navigate  ", Theme::help_text()),
         Span::styled(" Enter ", Theme::title()),
         Span::styled("Resume  ", Theme::help_text()),
-        Span::styled(" Tab ", Theme::title()),
-        Span::styled(format!("Time: {}  ", time_filter.label()), Theme::help_text()),
         Span::styled(" / ", Theme::title()),
         Span::styled("Filter  ", Theme::help_text()),
         Span::styled(" q/Esc ", Theme::title()),

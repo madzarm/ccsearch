@@ -194,6 +194,7 @@ fn run_event_loop(
                 &filtered_owned,
                 &mut app.list_state,
                 &app.query,
+                app.time_filter,
             );
 
             // Preview pane
@@ -201,7 +202,7 @@ fn run_event_loop(
             picker::render_preview(f, main_chunks[1], selected_result, &app.query);
 
             // Help bar
-            picker::render_help_bar(f, chunks[1], app.time_filter);
+            picker::render_help_bar(f, chunks[1]);
         })?;
 
         if app.should_quit {
