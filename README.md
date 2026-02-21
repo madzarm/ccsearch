@@ -17,12 +17,6 @@ Claude Code's built-in `--resume` picker only shows the last ~50 sessions with n
 
 ## Installation
 
-### Homebrew (macOS)
-
-```bash
-brew install madzarm/tap/ccsearch
-```
-
 ### Shell script (macOS & Linux)
 
 ```bash
