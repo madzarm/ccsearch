@@ -1,0 +1,29 @@
+[
+  {
+    "sessionId": "abc12345-1111-2222-3333-444455556666",
+    "summary": "Fix authentication bug in login flow",
+    "slug": "fix-auth-bug",
+    "projectPath": "/Users/user/projects/webapp",
+    "createdAt": "2026-02-15T10:30:00Z",
+    "lastActivityAt": "2026-02-15T11:45:00Z",
+    "gitBranch": "fix/auth-bug"
+  },
+  {
+    "sessionId": "def67890-aaaa-bbbb-cccc-ddddeeeeffff",
+    "summary": "Implement user settings page with dark mode toggle",
+    "slug": "user-settings",
+    "projectPath": "/Users/user/projects/webapp",
+    "createdAt": "2026-02-14T09:00:00Z",
+    "lastActivityAt": "2026-02-14T12:00:00Z",
+    "gitBranch": "feature/settings"
+  },
+  {
+    "sessionId": "ghi11111-2222-3333-4444-555566667777",
+    "summary": "Refactor database queries for performance",
+    "slug": "db-refactor",
+    "projectPath": "/Users/user/projects/webapp",
+    "createdAt": "2026-02-13T14:00:00Z",
+    "lastActivityAt": "2026-02-13T17:30:00Z",
+    "gitBranch": "refactor/db-perf"
+  }
+]
