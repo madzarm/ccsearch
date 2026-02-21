@@ -12,7 +12,7 @@ case "${OS}" in
     Darwin)
         case "${ARCH}" in
             arm64)  TARGET="aarch64-apple-darwin" ;;
-            x86_64) TARGET="x86_64-apple-darwin" ;;
+            x86_64) echo "Error: x86_64 macOS is not supported. Apple Silicon (arm64) only."; exit 1 ;;
             *)      echo "Error: Unsupported architecture: ${ARCH}"; exit 1 ;;
         esac
         ;;
