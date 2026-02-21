@@ -10,7 +10,6 @@ use crate::indexer::parser::ParsedSession;
 /// Main database handle wrapping rusqlite connection
 pub struct Database {
     conn: Connection,
-    has_vec: bool,
 }
 
 impl Database {
@@ -27,20 +26,11 @@ impl Database {
         // Enable WAL mode for better concurrent access
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
 
-        // Create base schema (sessions + FTS5)
+        // Create schema (sessions + FTS5 + embeddings)
         schema::create_schema(&conn)?;
+        schema::create_vec_table(&conn)?;
 
-        // Try to load sqlite-vec extension
-        let has_vec = Self::try_load_sqlite_vec(&conn);
-
-        if has_vec {
-            schema::create_vec_table(&conn)?;
-            log::debug!("sqlite-vec extension loaded successfully");
-        } else {
-            log::info!("sqlite-vec not available, vector search disabled");
-        }
-
-        Ok(Self { conn, has_vec })
+        Ok(Self { conn })
     }
 
     /// Opens an in-memory database (for testing)
@@ -48,28 +38,14 @@ impl Database {
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         schema::create_schema(&conn)?;
+        schema::create_vec_table(&conn)?;
 
-        let has_vec = Self::try_load_sqlite_vec(&conn);
-        if has_vec {
-            schema::create_vec_table(&conn)?;
-        }
-
-        Ok(Self { conn, has_vec })
+        Ok(Self { conn })
     }
 
-    /// Attempts to load the sqlite-vec extension
-    fn try_load_sqlite_vec(conn: &Connection) -> bool {
-        // Test if vec0 is already available (e.g., compiled into SQLite)
-        let test = conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS _vec_test USING vec0(test_col float[2]);
-             DROP TABLE IF EXISTS _vec_test;",
-        );
-        test.is_ok()
-    }
-
-    /// Returns whether vector search is available
+    /// Returns whether vector search is available (always true now — embeddings stored as blobs)
     pub fn has_vector_search(&self) -> bool {
-        self.has_vec
+        true
     }
 
     /// Gets a reference to the underlying connection
@@ -90,9 +66,6 @@ impl Database {
     }
 
     pub fn upsert_embedding(&self, session_id: &str, embedding: &[f32]) -> Result<()> {
-        if !self.has_vec {
-            return Ok(()); // Silently skip if vec not available
-        }
         queries::upsert_embedding(&self.conn, session_id, embedding)
     }
 
@@ -109,9 +82,6 @@ impl Database {
         query_embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<queries::VecResult>> {
-        if !self.has_vec {
-            return Ok(Vec::new());
-        }
         queries::vec_search(&self.conn, query_embedding, limit)
     }
 

@@ -67,13 +67,13 @@ pub fn create_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Creates the vector embedding table using sqlite-vec
+/// Creates the vector embedding table (plain table with blob storage)
 pub fn create_vec_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
-        CREATE VIRTUAL TABLE IF NOT EXISTS session_embeddings USING vec0(
+        CREATE TABLE IF NOT EXISTS session_embeddings (
             session_id TEXT PRIMARY KEY,
-            embedding float[384]
+            embedding BLOB NOT NULL
         );
         ",
     )?;

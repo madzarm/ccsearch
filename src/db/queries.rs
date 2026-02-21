@@ -75,16 +75,9 @@ pub fn upsert_session(
 
 /// Upserts a vector embedding for a session
 pub fn upsert_embedding(conn: &Connection, session_id: &str, embedding: &[f32]) -> Result<()> {
-    // Delete existing embedding
-    conn.execute(
-        "DELETE FROM session_embeddings WHERE session_id = ?1",
-        params![session_id],
-    )?;
-
-    // Insert new embedding as raw bytes
     let bytes = embedding_to_bytes(embedding);
     conn.execute(
-        "INSERT INTO session_embeddings (session_id, embedding) VALUES (?1, ?2)",
+        "INSERT OR REPLACE INTO session_embeddings (session_id, embedding) VALUES (?1, ?2)",
         params![session_id, bytes],
     )
     .context("Failed to insert embedding")?;
@@ -129,38 +122,43 @@ pub fn fts_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Ft
     Ok(results)
 }
 
-/// Vector similarity search using sqlite-vec
+/// Vector similarity search — loads all embeddings and computes cosine similarity in Rust
 pub fn vec_search(
     conn: &Connection,
     query_embedding: &[f32],
     limit: usize,
 ) -> Result<Vec<VecResult>> {
-    let bytes = embedding_to_bytes(query_embedding);
+    let mut stmt = conn.prepare("SELECT session_id, embedding FROM session_embeddings")?;
 
-    let mut stmt = conn.prepare(
-        "SELECT session_id, distance
-         FROM session_embeddings
-         WHERE embedding MATCH ?1
-         ORDER BY distance
-         LIMIT ?2",
-    )?;
-
-    let rows = stmt.query_map(params![bytes, limit as i64], |row| {
-        Ok(VecResult {
-            session_id: row.get(0)?,
-            distance: row.get(1)?,
-        })
+    let rows = stmt.query_map([], |row| {
+        let session_id: String = row.get(0)?;
+        let blob: Vec<u8> = row.get(1)?;
+        Ok((session_id, blob))
     })?;
 
-    let mut results = Vec::new();
+    let mut scored: Vec<(String, f64)> = Vec::new();
     for row in rows {
         match row {
-            Ok(r) => results.push(r),
+            Ok((session_id, blob)) => {
+                let embedding = bytes_to_embedding(&blob);
+                let sim = cosine_similarity(query_embedding, &embedding);
+                scored.push((session_id, sim));
+            }
             Err(e) => log::warn!("Vec query row error: {}", e),
         }
     }
 
-    Ok(results)
+    // Sort by similarity descending (highest = most similar)
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+
+    Ok(scored
+        .into_iter()
+        .map(|(session_id, sim)| VecResult {
+            session_id,
+            distance: 1.0 - sim, // convert similarity to distance for consistency
+        })
+        .collect())
 }
 
 /// Gets a full session row by ID
@@ -250,9 +248,37 @@ pub fn list_sessions(
     Ok(results)
 }
 
-/// Converts f32 slice to little-endian bytes for sqlite-vec
+/// Converts f32 slice to little-endian bytes for storage
 fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// Converts little-endian bytes back to f32 slice
+fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+/// Computes cosine similarity between two vectors
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+    let mut dot = 0.0f64;
+    let mut norm_a = 0.0f64;
+    let mut norm_b = 0.0f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let x = *x as f64;
+        let y = *y as f64;
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom == 0.0 {
+        0.0
+    } else {
+        dot / denom
+    }
 }
 
 /// Trait extension for optional query results
