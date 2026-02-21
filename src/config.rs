@@ -21,6 +21,11 @@ pub struct Config {
 
     #[serde(default = "default_max_text_chars")]
     pub max_text_chars: usize,
+
+    /// Recency boost half-life in days. Sessions this many days old get 50% boost.
+    /// Set to 0 to disable recency boosting.
+    #[serde(default = "default_recency_halflife")]
+    pub recency_halflife: f64,
 }
 
 fn default_bm25_weight() -> f64 {
@@ -41,6 +46,9 @@ fn default_days() -> u32 {
 fn default_max_text_chars() -> usize {
     8000
 }
+fn default_recency_halflife() -> f64 {
+    7.0
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -51,6 +59,7 @@ impl Default for Config {
             max_results: default_max_results(),
             default_days: default_days(),
             max_text_chars: default_max_text_chars(),
+            recency_halflife: default_recency_halflife(),
         }
     }
 }

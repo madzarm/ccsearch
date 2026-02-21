@@ -73,6 +73,7 @@ fn cmd_search(args: cli::SearchArgs) -> Result<()> {
         args.bm25_weight,
         args.vec_weight,
         config.rrf_k,
+        config.recency_halflife,
     )?;
 
     if results.is_empty() {

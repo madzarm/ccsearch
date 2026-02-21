@@ -18,7 +18,7 @@ pub struct SearchResult {
     pub session: SessionRow,
 }
 
-/// Performs hybrid search: BM25 + vector + RRF fusion
+/// Performs hybrid search: BM25 + vector + RRF fusion + recency boost
 pub fn hybrid_search(
     db: &Database,
     embedder: Option<&mut Embedder>,
@@ -27,6 +27,7 @@ pub fn hybrid_search(
     bm25_weight: f64,
     vec_weight: f64,
     rrf_k: f64,
+    recency_halflife: f64,
 ) -> Result<Vec<SearchResult>> {
     // BM25 search
     let bm25_results = bm25::search(db, query, limit * 2)?;
@@ -41,19 +42,35 @@ pub fn hybrid_search(
     // RRF fusion
     let fused = rrf::fuse(&bm25_results, &vec_results, bm25_weight, vec_weight, rrf_k);
 
-    // Fetch full session data for top results
+    let now = chrono::Utc::now();
+
+    // Fetch full session data and apply recency boost
     let mut results = Vec::new();
-    for rrf_result in fused.into_iter().take(limit) {
+    for rrf_result in fused.into_iter().take(limit * 2) {
         if let Ok(Some(session)) = db.get_session(&rrf_result.session_id) {
+            let score = if recency_halflife > 0.0 {
+                let age_days = chrono::DateTime::parse_from_rfc3339(&session.modified_at)
+                    .map(|dt| (now - dt.to_utc()).num_hours() as f64 / 24.0)
+                    .unwrap_or(recency_halflife);
+                let boost = 1.0 + (0.5f64.powf(age_days / recency_halflife));
+                rrf_result.score * boost
+            } else {
+                rrf_result.score
+            };
+
             results.push(SearchResult {
                 session_id: rrf_result.session_id,
-                score: rrf_result.score,
+                score,
                 bm25_rank: rrf_result.bm25_rank,
                 vec_rank: rrf_result.vec_rank,
                 session,
             });
         }
     }
+
+    // Re-sort after recency boost
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(limit);
 
     Ok(results)
 }
