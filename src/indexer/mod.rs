@@ -5,7 +5,8 @@ pub mod tokenizer;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::claude;
 use crate::config::Config;
@@ -35,60 +36,195 @@ impl<'a> Indexer<'a> {
         }
     }
 
-    /// Runs a full index of all sessions
+    /// Runs a full index of all sessions.
+    /// First indexes sessions from sessions-index.json files (rich metadata),
+    /// then discovers any .jsonl session files not covered by the index.
     pub fn index_all(&mut self, force: bool, days_filter: Option<u32>) -> Result<IndexStats> {
-        let indices = claude::discover_session_indices()?;
         let mut stats = IndexStats::default();
+        let mut indexed_ids = HashSet::new();
 
-        if indices.is_empty() {
-            log::info!("No session indices found");
-            return Ok(stats);
-        }
+        // Phase 1: Index from sessions-index.json (has metadata like summary, git branch)
+        let indices = claude::discover_session_indices()?;
 
-        let pb = ProgressBar::new(indices.len() as u64);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({msg})",
-                )
-                .expect("Invalid progress bar template")
-                .progress_chars("#>-"),
-        );
+        let total_phases = if indices.is_empty() { 1 } else { 2 };
+        if !indices.is_empty() {
+            eprintln!("→ Phase 1/{}: Indexing from session indices...", total_phases);
 
-        for index_path in &indices {
-            pb.set_message(claude::encoded_project_name(index_path).unwrap_or_default());
+            let pb = ProgressBar::new(indices.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({msg})")
+                    .expect("Invalid progress bar template")
+                    .progress_chars("#>-"),
+            );
 
-            match self.index_project(index_path, force, days_filter) {
-                Ok(project_stats) => {
-                    stats.sessions_indexed += project_stats.sessions_indexed;
-                    stats.sessions_skipped += project_stats.sessions_skipped;
-                    stats.sessions_errored += project_stats.sessions_errored;
+            for index_path in &indices {
+                pb.set_message(claude::encoded_project_name(index_path).unwrap_or_default());
+
+                match self.index_project(index_path, force, days_filter, &mut indexed_ids) {
+                    Ok(project_stats) => {
+                        stats.sessions_indexed += project_stats.sessions_indexed;
+                        stats.sessions_skipped += project_stats.sessions_skipped;
+                        stats.sessions_errored += project_stats.sessions_errored;
+                    }
+                    Err(e) => {
+                        log::warn!("Error indexing {:?}: {}", index_path, e);
+                        stats.sessions_errored += 1;
+                    }
                 }
-                Err(e) => {
-                    log::warn!("Error indexing {:?}: {}", index_path, e);
-                    stats.sessions_errored += 1;
-                }
+
+                pb.inc(1);
             }
 
-            pb.inc(1);
+            pb.finish_and_clear();
         }
 
-        pb.finish_with_message(format!(
-            "Done: {} indexed, {} skipped, {} errors",
+        // Phase 2: Discover .jsonl files not in any sessions-index.json
+        eprintln!(
+            "→ Phase {}/{}: Scanning for unlisted session files...",
+            total_phases, total_phases
+        );
+
+        let all_files = claude::discover_all_session_files()?;
+        let unlisted: Vec<_> = all_files
+            .iter()
+            .filter(|(sid, _)| !indexed_ids.contains(*sid))
+            .collect();
+
+        if !unlisted.is_empty() {
+            let pb = ProgressBar::new(unlisted.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({msg})")
+                    .expect("Invalid progress bar template")
+                    .progress_chars("#>-"),
+            );
+
+            let cutoff = days_filter
+                .map(|days| chrono::Utc::now() - chrono::Duration::days(days as i64));
+
+            for (session_id, (jsonl_path, encoded_name)) in &unlisted {
+                pb.set_message(encoded_name.clone());
+
+                // Staleness check
+                if !force {
+                    let current_mtime = parser::file_mtime(jsonl_path).unwrap_or(0);
+                    if let Ok(Some(stored_mtime)) = self.db.get_session_mtime(session_id) {
+                        if stored_mtime >= current_mtime {
+                            stats.sessions_skipped += 1;
+                            pb.inc(1);
+                            continue;
+                        }
+                    }
+                }
+
+                // Date filter based on file mtime
+                if let Some(ref cutoff_time) = cutoff {
+                    if let Ok(mtime) = parser::file_mtime(jsonl_path) {
+                        let file_time = chrono::DateTime::from_timestamp(mtime, 0);
+                        if let Some(ft) = file_time {
+                            if ft < *cutoff_time {
+                                stats.sessions_skipped += 1;
+                                pb.inc(1);
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                let decoded_path = claude::decode_project_path(encoded_name);
+                // Create a minimal entry for sessions not in the index
+                let entry = SessionIndexEntry {
+                    session_id: session_id.to_string(),
+                    full_path: Some(jsonl_path.to_string_lossy().to_string()),
+                    first_prompt: None,
+                    summary: None,
+                    slug: None,
+                    project_path: Some(decoded_path.clone()),
+                    message_count: None,
+                    created: None,
+                    modified: None,
+                    created_at: None,
+                    last_activity_at: None,
+                    file_mtime: None,
+                    git_branch: None,
+                };
+
+                match self.index_session(&entry, jsonl_path, &decoded_path) {
+                    Ok(_) => {
+                        stats.sessions_indexed += 1;
+                        if self.verbose {
+                            log::info!("Indexed unlisted session: {}", session_id);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Error indexing session {}: {}", session_id, e);
+                        stats.sessions_errored += 1;
+                    }
+                }
+
+                pb.inc(1);
+            }
+
+            pb.finish_and_clear();
+        }
+
+        eprintln!(
+            "\nDone: {} sessions indexed, {} skipped, {} errors",
             stats.sessions_indexed, stats.sessions_skipped, stats.sessions_errored
-        ));
+        );
 
         Ok(stats)
     }
 
     /// Performs a quick JIT index check — only indexes new/changed sessions
     pub fn jit_index(&mut self) -> Result<()> {
+        let mut indexed_ids = HashSet::new();
+
+        // Check sessions-index.json files
         let indices = claude::discover_session_indices()?;
         for index_path in &indices {
-            if let Err(e) = self.index_project(index_path, false, None) {
+            if let Err(e) = self.index_project(index_path, false, None, &mut indexed_ids) {
                 log::warn!("JIT index error for {:?}: {}", index_path, e);
             }
         }
+
+        // Also check for unlisted .jsonl files
+        let all_files = claude::discover_all_session_files()?;
+        for (session_id, (jsonl_path, encoded_name)) in &all_files {
+            if indexed_ids.contains(session_id.as_str()) {
+                continue;
+            }
+            // Staleness check
+            let current_mtime = parser::file_mtime(jsonl_path).unwrap_or(0);
+            if let Ok(Some(stored_mtime)) = self.db.get_session_mtime(session_id) {
+                if stored_mtime >= current_mtime {
+                    continue;
+                }
+            }
+
+            let decoded_path = claude::decode_project_path(encoded_name);
+            let entry = SessionIndexEntry {
+                session_id: session_id.to_string(),
+                full_path: Some(jsonl_path.to_string_lossy().to_string()),
+                first_prompt: None,
+                summary: None,
+                slug: None,
+                project_path: Some(decoded_path.clone()),
+                message_count: None,
+                created: None,
+                modified: None,
+                created_at: None,
+                last_activity_at: None,
+                file_mtime: None,
+                git_branch: None,
+            };
+
+            if let Err(e) = self.index_session(&entry, jsonl_path, &decoded_path) {
+                log::warn!("JIT index error for session {}: {}", session_id, e);
+            }
+        }
+
         Ok(())
     }
 
@@ -98,6 +234,7 @@ impl<'a> Indexer<'a> {
         index_path: &Path,
         force: bool,
         days_filter: Option<u32>,
+        indexed_ids: &mut HashSet<String>,
     ) -> Result<IndexStats> {
         let mut stats = IndexStats::default();
 
@@ -121,9 +258,13 @@ impl<'a> Indexer<'a> {
             days_filter.map(|days| chrono::Utc::now() - chrono::Duration::days(days as i64));
 
         for entry in &entries {
-            // Apply date filter
+            // Track that we've seen this session (even if we skip it)
+            indexed_ids.insert(entry.session_id.clone());
+
+            // Apply date filter (try "created" first, then "createdAt")
             if let Some(ref cutoff_time) = cutoff {
-                if let Some(ref created) = entry.created_at {
+                let created_str = entry.created.as_ref().or(entry.created_at.as_ref());
+                if let Some(created) = created_str {
                     if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(created) {
                         if ts < *cutoff_time {
                             stats.sessions_skipped += 1;
@@ -133,7 +274,12 @@ impl<'a> Indexer<'a> {
                 }
             }
 
-            let jsonl_path = project_dir.join(format!("{}.jsonl", &entry.session_id));
+            // Use fullPath from index if available, otherwise construct it
+            let jsonl_path = if let Some(ref fp) = entry.full_path {
+                PathBuf::from(fp)
+            } else {
+                project_dir.join(format!("{}.jsonl", &entry.session_id))
+            };
             if !jsonl_path.exists() {
                 stats.sessions_skipped += 1;
                 continue;
@@ -181,22 +327,34 @@ impl<'a> Indexer<'a> {
         let mtime = parser::file_mtime(jsonl_path)?;
         let now = chrono::Utc::now().to_rfc3339();
 
+        // For sessions without index metadata, derive timestamps from file mtime
+        let mtime_rfc3339 = chrono::DateTime::from_timestamp(mtime, 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| now.clone());
+
         let session = ParsedSession {
             session_id: entry.session_id.clone(),
             project_path: entry
                 .project_path
                 .clone()
                 .unwrap_or_else(|| decoded_path.to_string()),
-            first_prompt: first_prompt.or_else(|| entry.summary.clone()),
+            first_prompt: first_prompt
+                .or_else(|| entry.first_prompt.clone())
+                .or_else(|| entry.summary.clone()),
             summary: entry.summary.clone(),
             slug: entry.slug.clone(),
             git_branch: entry.git_branch.clone(),
-            message_count,
-            created_at: entry.created_at.clone().unwrap_or_else(|| now.clone()),
-            modified_at: entry
-                .last_activity_at
+            message_count: entry.message_count.unwrap_or(message_count),
+            created_at: entry
+                .created
                 .clone()
-                .unwrap_or_else(|| now.clone()),
+                .or_else(|| entry.created_at.clone())
+                .unwrap_or_else(|| mtime_rfc3339.clone()),
+            modified_at: entry
+                .modified
+                .clone()
+                .or_else(|| entry.last_activity_at.clone())
+                .unwrap_or_else(|| mtime_rfc3339),
             full_text,
         };
 
@@ -225,13 +383,9 @@ fn build_embedding_text(session: &ParsedSession) -> String {
         parts.push(first_prompt.clone());
     }
     if !session.full_text.is_empty() {
-        // Take first portion of full text
-        let max = 2000;
-        if session.full_text.len() > max {
-            parts.push(session.full_text[..max].to_string());
-        } else {
-            parts.push(session.full_text.clone());
-        }
+        // Take first portion of full text (char-safe truncation)
+        let truncated: String = session.full_text.chars().take(2000).collect();
+        parts.push(truncated);
     }
 
     parts.join(" ")

@@ -77,13 +77,13 @@ fn cmd_search(args: cli::SearchArgs) -> Result<()> {
 
     // Interactive TUI picker
     let selected = tui::run(results, &args.query)?;
-    if let Some(session_id) = selected {
+    if let Some((session_id, project_path)) = selected {
         eprintln!(
             "{} Resuming session {}...",
             "→".green(),
             &session_id[..8.min(session_id.len())]
         );
-        claude::resume_session(&session_id)?;
+        claude::resume_session(&session_id, Some(&project_path))?;
     }
 
     Ok(())
@@ -99,16 +99,7 @@ fn cmd_index(args: cli::IndexArgs) -> Result<()> {
 
     eprintln!("{} Indexing Claude Code sessions...\n", "→".green());
 
-    let stats = indexer.index_all(args.force, args.days)?;
-
-    eprintln!();
-    eprintln!(
-        "{} {} sessions indexed, {} skipped, {} errors",
-        "Done:".green().bold(),
-        stats.sessions_indexed,
-        stats.sessions_skipped,
-        stats.sessions_errored
-    );
+    let _stats = indexer.index_all(args.force, args.days)?;
 
     Ok(())
 }
