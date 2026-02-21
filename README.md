@@ -17,17 +17,28 @@ Claude Code's built-in `--resume` picker only shows the last ~50 sessions with n
 
 ## Installation
 
+### Homebrew (macOS)
+
 ```bash
-cargo install --path .
+brew install madzarm/tap/ccsearch
 ```
 
-Or build from source:
+### Shell script (macOS & Linux)
 
 ```bash
-git clone https://github.com/example/ccsearch.git
-cd ccsearch
-cargo build --release
-# Binary at target/release/ccsearch
+curl -fsSL https://raw.githubusercontent.com/madzarm/ccsearch/master/install.sh | sh
+```
+
+To install to a custom directory:
+
+```bash
+INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/madzarm/ccsearch/master/install.sh | sh
+```
+
+### From source (requires Rust)
+
+```bash
+cargo install --git https://github.com/madzarm/ccsearch.git
 ```
 
 ## Quick Start
