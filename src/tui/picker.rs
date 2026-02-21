@@ -61,10 +61,7 @@ pub fn render_results_list(
         })
         .collect();
 
-    let time_label = match time_filter {
-        TimeFilter::All => String::new(),
-        _ => format!(" [{}]", time_filter.label()),
-    };
+    let time_label = format!(" [{}]", time_filter.label());
 
     let list = List::new(items)
         .block(

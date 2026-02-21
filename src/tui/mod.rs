@@ -38,7 +38,7 @@ impl TimeFilter {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::All => "All",
+            Self::All => "All time",
             Self::Day => "24h",
             Self::Week => "7d",
             Self::Month => "30d",
