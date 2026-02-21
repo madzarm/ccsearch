@@ -4,7 +4,7 @@ Claude Code is an amazing tool, but finding past sessions is terrible. The built
 
 **`ccsearch` fixes this.** It's a lightning-fast, searchable UI for your Claude Code history. Type what you remember, hit Enter, and it instantly drops you back into the chat.
 
-![ccsearch demo](ccsearch.gif)
+[![ccsearch demo](https://img.youtube.com/vi/Vs__TyftipQ/maxresdefault.jpg)](https://youtu.be/Vs__TyftipQ)
 
 ## Why use ccsearch?
 
