@@ -22,7 +22,7 @@ fn setup_test_db() -> ccsearch::db::Database {
 
     for (entry, filename) in entries.iter().zip(session_files.iter()) {
         let jsonl_path = fixture_path(filename);
-        let (full_text, first_prompt, message_count) =
+        let parsed =
             ccsearch::indexer::parser::parse_conversation_jsonl(&jsonl_path, 8000).unwrap();
 
         let session = ccsearch::indexer::parser::ParsedSession {
@@ -31,11 +31,11 @@ fn setup_test_db() -> ccsearch::db::Database {
                 .project_path
                 .clone()
                 .unwrap_or_else(|| "/test".to_string()),
-            first_prompt,
+            first_prompt: parsed.first_prompt,
             summary: entry.summary.clone(),
             slug: entry.slug.clone(),
             git_branch: entry.git_branch.clone(),
-            message_count,
+            message_count: parsed.message_count,
             created_at: entry
                 .created_at
                 .clone()
@@ -44,7 +44,7 @@ fn setup_test_db() -> ccsearch::db::Database {
                 .last_activity_at
                 .clone()
                 .unwrap_or_else(|| "2026-02-15T10:00:00Z".to_string()),
-            full_text,
+            full_text: parsed.full_text,
         };
 
         let now = chrono::Utc::now().to_rfc3339();

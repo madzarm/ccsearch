@@ -27,33 +27,33 @@ fn test_parse_session_index() {
 #[test]
 fn test_parse_conversation_jsonl() {
     let path = fixture_path("sample-session.jsonl");
-    let (full_text, first_prompt, message_count) =
+    let parsed =
         ccsearch::indexer::parser::parse_conversation_jsonl(&path, 8000).unwrap();
 
     // Should have extracted text
-    assert!(!full_text.is_empty());
+    assert!(!parsed.full_text.is_empty());
 
     // First prompt should be the user's first message
-    assert!(first_prompt.is_some());
-    let prompt = first_prompt.unwrap();
+    assert!(parsed.first_prompt.is_some());
+    let prompt = parsed.first_prompt.unwrap();
     assert!(prompt.contains("401 error"));
 
     // Should have counted messages
-    assert!(message_count > 0);
+    assert!(parsed.message_count > 0);
 
     // Full text should contain conversation content
-    assert!(full_text.contains("authentication"));
-    assert!(full_text.contains("refresh token"));
+    assert!(parsed.full_text.contains("authentication"));
+    assert!(parsed.full_text.contains("refresh token"));
 }
 
 #[test]
 fn test_parse_conversation_truncation() {
     let path = fixture_path("sample-session.jsonl");
     // Very small max_chars to test truncation
-    let (full_text, _, _) =
+    let parsed =
         ccsearch::indexer::parser::parse_conversation_jsonl(&path, 100).unwrap();
 
-    assert!(full_text.len() <= 200); // Some overhead from prefixes
+    assert!(parsed.full_text.len() <= 200); // Some overhead from prefixes
 }
 
 #[test]

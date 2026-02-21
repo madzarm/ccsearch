@@ -321,7 +321,7 @@ impl<'a> Indexer<'a> {
         jsonl_path: &Path,
         decoded_path: &str,
     ) -> Result<()> {
-        let (full_text, first_prompt, message_count) =
+        let parsed =
             parser::parse_conversation_jsonl(jsonl_path, self.config.max_text_chars)?;
 
         let mtime = parser::file_mtime(jsonl_path)?;
@@ -332,30 +332,37 @@ impl<'a> Indexer<'a> {
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| now.clone());
 
+        // Prefer: index metadata > JSONL timestamps > file mtime
+        let created_at = entry
+            .created
+            .clone()
+            .or_else(|| entry.created_at.clone())
+            .or(parsed.first_timestamp)
+            .unwrap_or_else(|| mtime_rfc3339.clone());
+
+        let modified_at = entry
+            .modified
+            .clone()
+            .or_else(|| entry.last_activity_at.clone())
+            .or(parsed.last_timestamp)
+            .unwrap_or_else(|| mtime_rfc3339);
+
         let session = ParsedSession {
             session_id: entry.session_id.clone(),
             project_path: entry
                 .project_path
                 .clone()
                 .unwrap_or_else(|| decoded_path.to_string()),
-            first_prompt: first_prompt
+            first_prompt: parsed.first_prompt
                 .or_else(|| entry.first_prompt.clone())
                 .or_else(|| entry.summary.clone()),
             summary: entry.summary.clone(),
             slug: entry.slug.clone(),
             git_branch: entry.git_branch.clone(),
-            message_count: entry.message_count.unwrap_or(message_count),
-            created_at: entry
-                .created
-                .clone()
-                .or_else(|| entry.created_at.clone())
-                .unwrap_or_else(|| mtime_rfc3339.clone()),
-            modified_at: entry
-                .modified
-                .clone()
-                .or_else(|| entry.last_activity_at.clone())
-                .unwrap_or_else(|| mtime_rfc3339),
-            full_text,
+            message_count: entry.message_count.unwrap_or(parsed.message_count),
+            created_at,
+            modified_at,
+            full_text: parsed.full_text,
         };
 
         // Store in DB

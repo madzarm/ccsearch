@@ -65,6 +65,9 @@ pub struct ConversationMessage {
 
     #[serde(default)]
     pub message: Option<MessageContent>,
+
+    #[serde(default)]
+    pub timestamp: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,17 +103,25 @@ pub fn parse_session_index(path: &Path) -> Result<Vec<SessionIndexEntry>> {
     Ok(index.entries)
 }
 
+/// Result of parsing a JSONL conversation file
+pub struct ParsedConversation {
+    pub full_text: String,
+    pub first_prompt: Option<String>,
+    pub message_count: usize,
+    pub first_timestamp: Option<String>,
+    pub last_timestamp: Option<String>,
+}
+
 /// Parses a JSONL conversation file and extracts text content
-pub fn parse_conversation_jsonl(
-    path: &Path,
-    max_chars: usize,
-) -> Result<(String, Option<String>, usize)> {
+pub fn parse_conversation_jsonl(path: &Path, max_chars: usize) -> Result<ParsedConversation> {
     let file = File::open(path).with_context(|| format!("Failed to open {:?}", path))?;
     let reader = BufReader::new(file);
 
     let mut full_text = String::new();
     let mut first_prompt: Option<String> = None;
     let mut message_count: usize = 0;
+    let mut first_timestamp: Option<String> = None;
+    let mut last_timestamp: Option<String> = None;
 
     for line in reader.lines() {
         let line = match line {
@@ -129,6 +140,14 @@ pub fn parse_conversation_jsonl(
             Ok(m) => m,
             Err(_) => continue,
         };
+
+        // Track first and last timestamps from all messages
+        if let Some(ref ts) = msg.timestamp {
+            if first_timestamp.is_none() {
+                first_timestamp = Some(ts.clone());
+            }
+            last_timestamp = Some(ts.clone());
+        }
 
         if let Some(text) = extract_message_text(&msg) {
             if text.trim().is_empty() {
@@ -166,7 +185,13 @@ pub fn parse_conversation_jsonl(
         }
     }
 
-    Ok((full_text, first_prompt, message_count))
+    Ok(ParsedConversation {
+        full_text,
+        first_prompt,
+        message_count,
+        first_timestamp,
+        last_timestamp,
+    })
 }
 
 /// Extracts text content from a conversation message
