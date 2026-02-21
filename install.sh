@@ -2,7 +2,7 @@
 set -e
 
 REPO="madzarm/ccsearch"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/bin}"
 
 # Detect OS and architecture
 OS="$(uname -s)"
@@ -50,12 +50,8 @@ curl -sL "${URL}" -o "${TMPDIR}/ccsearch.tar.gz"
 tar xzf "${TMPDIR}/ccsearch.tar.gz" -C "${TMPDIR}"
 
 # Install
-if [ -w "${INSTALL_DIR}" ]; then
-    mv "${TMPDIR}/ccsearch" "${INSTALL_DIR}/ccsearch"
-else
-    echo "Installing to ${INSTALL_DIR} (requires sudo)..."
-    sudo mv "${TMPDIR}/ccsearch" "${INSTALL_DIR}/ccsearch"
-fi
+mkdir -p "${INSTALL_DIR}"
+mv "${TMPDIR}/ccsearch" "${INSTALL_DIR}/ccsearch"
 
 chmod +x "${INSTALL_DIR}/ccsearch"
 
@@ -66,5 +62,18 @@ if [ "${OS}" = "Darwin" ]; then
 fi
 
 echo "ccsearch ${TAG} installed to ${INSTALL_DIR}/ccsearch"
+
+# Check if INSTALL_DIR is in PATH
+case ":${PATH}:" in
+    *":${INSTALL_DIR}:"*) ;;
+    *)
+        echo ""
+        echo "Add ${INSTALL_DIR} to your PATH:"
+        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+        echo ""
+        echo "Or add it to your shell profile (~/.zshrc or ~/.bashrc)."
+        ;;
+esac
+
 echo ""
 echo "Run 'ccsearch --help' to get started."
