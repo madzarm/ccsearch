@@ -29,7 +29,13 @@ To install to a custom directory:
 INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/madzarm/ccsearch/master/install.sh | sh
 ```
 
-### Windows / From source (requires Rust)
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/madzarm/ccsearch/master/install.ps1 | iex
+```
+
+### From source (requires Rust)
 
 ```bash
 cargo install --git https://github.com/madzarm/ccsearch.git

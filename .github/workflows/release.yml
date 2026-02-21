@@ -19,6 +19,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: ccsearch-x86_64-unknown-linux-gnu
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: ccsearch-x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
 
@@ -37,13 +40,21 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.name }}.tar.gz ccsearch
           cd ../../..
           shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/ccsearch.exe -DestinationPath ${{ matrix.name }}.zip
+          (Get-FileHash ${{ matrix.name }}.zip -Algorithm SHA256).Hash.ToLower() + "  ${{ matrix.name }}.zip" | Out-File -Encoding utf8 ${{ matrix.name }}.zip.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -52,6 +63,8 @@ jobs:
           path: |
             ${{ matrix.name }}.tar.gz
             ${{ matrix.name }}.tar.gz.sha256
+            ${{ matrix.name }}.zip
+            ${{ matrix.name }}.zip.sha256
 
   release:
     needs: build
@@ -70,6 +83,7 @@ jobs:
           generate_release_notes: true
           files: |
             *.tar.gz
+            *.zip
             *.sha256
 
   update-homebrew:
