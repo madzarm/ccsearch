@@ -22,6 +22,14 @@ pub struct Config {
     #[serde(default = "default_max_text_chars")]
     pub max_text_chars: usize,
 
+    /// Size of each conversation chunk in characters for search indexing
+    #[serde(default = "default_chunk_size")]
+    pub chunk_size: usize,
+
+    /// Overlap between consecutive chunks in characters
+    #[serde(default = "default_chunk_overlap")]
+    pub chunk_overlap: usize,
+
     /// Recency boost half-life in days. Sessions this many days old get 50% boost.
     /// Set to 0 to disable recency boosting.
     #[serde(default = "default_recency_halflife")]
@@ -50,6 +58,12 @@ fn default_days() -> u32 {
 fn default_max_text_chars() -> usize {
     8000
 }
+fn default_chunk_size() -> usize {
+    4000
+}
+fn default_chunk_overlap() -> usize {
+    200
+}
 fn default_recency_halflife() -> f64 {
     7.0
 }
@@ -63,6 +77,8 @@ impl Default for Config {
             max_results: default_max_results(),
             default_days: default_days(),
             max_text_chars: default_max_text_chars(),
+            chunk_size: default_chunk_size(),
+            chunk_overlap: default_chunk_overlap(),
             recency_halflife: default_recency_halflife(),
             exclude_projects: Vec::new(),
         }
