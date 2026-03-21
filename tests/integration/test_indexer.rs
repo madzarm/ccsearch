@@ -28,7 +28,7 @@ fn test_parse_session_index() {
 fn test_parse_conversation_jsonl() {
     let path = fixture_path("sample-session.jsonl");
     let parsed =
-        ccsearch::indexer::parser::parse_conversation_jsonl(&path, 8000).unwrap();
+        ccsearch::indexer::parser::parse_conversation_jsonl(&path).unwrap();
 
     // Should have extracted text
     assert!(!parsed.full_text.is_empty());
@@ -47,13 +47,27 @@ fn test_parse_conversation_jsonl() {
 }
 
 #[test]
-fn test_parse_conversation_truncation() {
-    let path = fixture_path("sample-session.jsonl");
-    // Very small max_chars to test truncation
-    let parsed =
-        ccsearch::indexer::parser::parse_conversation_jsonl(&path, 100).unwrap();
+fn test_chunk_text() {
+    let text = "a".repeat(10000);
+    let chunks = ccsearch::indexer::parser::chunk_text(&text, 4000, 200);
 
-    assert!(parsed.full_text.len() <= 200); // Some overhead from prefixes
+    // Should produce multiple chunks
+    assert!(chunks.len() > 1, "Long text should produce multiple chunks");
+
+    // Each chunk should be at most chunk_size
+    for chunk in &chunks {
+        assert!(chunk.len() <= 4000);
+    }
+
+    // Short text should produce one chunk
+    let short = "hello world";
+    let chunks = ccsearch::indexer::parser::chunk_text(short, 4000, 200);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0], short);
+
+    // Empty text should produce no chunks
+    let chunks = ccsearch::indexer::parser::chunk_text("", 4000, 200);
+    assert!(chunks.is_empty());
 }
 
 #[test]

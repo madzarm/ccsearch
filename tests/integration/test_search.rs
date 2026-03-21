@@ -23,7 +23,7 @@ fn setup_test_db() -> ccsearch::db::Database {
     for (entry, filename) in entries.iter().zip(session_files.iter()) {
         let jsonl_path = fixture_path(filename);
         let parsed =
-            ccsearch::indexer::parser::parse_conversation_jsonl(&jsonl_path, 8000).unwrap();
+            ccsearch::indexer::parser::parse_conversation_jsonl(&jsonl_path).unwrap();
 
         let session = ccsearch::indexer::parser::ParsedSession {
             session_id: entry.session_id.clone(),
