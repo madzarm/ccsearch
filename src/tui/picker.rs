@@ -139,13 +139,19 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
             lines.push(Line::from(""));
         }
 
-        // Show snippet from full_text with context around query terms
-        let snippet = extract_snippet(&result.session.full_text, query, 500);
+        // Show snippet from matched chunk or full_text with context around query terms
+        let source_text = result
+            .matched_text
+            .as_deref()
+            .unwrap_or(&result.session.full_text);
+        let snippet = extract_snippet(source_text, query, 500);
         if !snippet.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "Matching text:",
-                Theme::subtitle(),
-            )));
+            let label = if result.matched_text.is_some() {
+                "Matching chunk:"
+            } else {
+                "Matching text:"
+            };
+            lines.push(Line::from(Span::styled(label, Theme::subtitle())));
             for line in snippet.lines() {
                 lines.push(Line::from(format!("  {}", line)));
             }
