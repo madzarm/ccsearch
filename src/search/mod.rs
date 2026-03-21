@@ -31,9 +31,10 @@ pub fn hybrid_search(
     rrf_k: f64,
     recency_halflife: f64,
     exclude_projects: &[String],
+    exact: bool,
 ) -> Result<Vec<SearchResult>> {
     // BM25 search (uses chunks if available, falls back to sessions)
-    let bm25_results = bm25::search(db, query, limit * 2)?;
+    let bm25_results = bm25::search(db, query, limit * 2, exact)?;
 
     // Vector search (uses chunk embeddings if available, falls back to session embeddings)
     let vec_results = if let Some(embedder) = embedder {

@@ -93,6 +93,7 @@ fn cmd_search(args: cli::SearchArgs) -> Result<()> {
         config.rrf_k,
         config.recency_halflife,
         &config.exclude_projects,
+        args.exact,
     )?;
 
     if results.is_empty() {
