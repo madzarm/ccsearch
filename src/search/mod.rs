@@ -94,8 +94,13 @@ pub fn hybrid_search(
         }
     }
 
-    // Re-sort after recency boost
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    // Exact mode: sort by most recent first (all matches are equally relevant).
+    // Hybrid mode: sort by score (relevance ranking).
+    if exact {
+        results.sort_by(|a, b| b.session.modified_at.cmp(&a.session.modified_at));
+    } else {
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    }
     results.truncate(limit);
 
     Ok(results)
