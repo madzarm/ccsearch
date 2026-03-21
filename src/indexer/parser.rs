@@ -112,8 +112,8 @@ pub struct ParsedConversation {
     pub last_timestamp: Option<String>,
 }
 
-/// Parses a JSONL conversation file and extracts text content
-pub fn parse_conversation_jsonl(path: &Path, max_chars: usize) -> Result<ParsedConversation> {
+/// Parses a JSONL conversation file and extracts all text content (no truncation).
+pub fn parse_conversation_jsonl(path: &Path) -> Result<ParsedConversation> {
     let file = File::open(path).with_context(|| format!("Failed to open {:?}", path))?;
     let reader = BufReader::new(file);
 
@@ -169,19 +169,10 @@ pub fn parse_conversation_jsonl(path: &Path, max_chars: usize) -> Result<ParsedC
             }
 
             // Add to full text with role prefix for context
-            if full_text.len() < max_chars {
-                let remaining = max_chars - full_text.len();
-                let prefix = if is_user { "User: " } else { "Assistant: " };
-                full_text.push_str(prefix);
-
-                if text.len() > remaining {
-                    let truncated: String = text.chars().take(remaining).collect();
-                    full_text.push_str(&truncated);
-                } else {
-                    full_text.push_str(&text);
-                }
-                full_text.push('\n');
-            }
+            let prefix = if is_user { "User: " } else { "Assistant: " };
+            full_text.push_str(prefix);
+            full_text.push_str(&text);
+            full_text.push('\n');
         }
     }
 
@@ -192,6 +183,37 @@ pub fn parse_conversation_jsonl(path: &Path, max_chars: usize) -> Result<ParsedC
         first_timestamp,
         last_timestamp,
     })
+}
+
+/// Splits text into overlapping chunks for fine-grained search indexing.
+/// Tries to break at newline boundaries when possible.
+pub fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
+    if text.is_empty() {
+        return vec![];
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= chunk_size {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let step = chunk_size.saturating_sub(overlap).max(1);
+    let mut start = 0;
+
+    while start < chars.len() {
+        let end = (start + chunk_size).min(chars.len());
+        let chunk: String = chars[start..end].iter().collect();
+        chunks.push(chunk);
+
+        if end >= chars.len() {
+            break;
+        }
+
+        start += step;
+    }
+
+    chunks
 }
 
 /// Extracts text content from a conversation message
