@@ -60,8 +60,8 @@ pub struct SearchArgs {
     #[arg(long, conflicts_with = "exact")]
     pub semantic: bool,
 
-    /// BM25 weight in RRF fusion (default: 1.0)
-    #[arg(long, default_value_t = 1.0)]
+    /// BM25 weight in RRF fusion (default: 3.0)
+    #[arg(long, default_value_t = 3.0)]
     pub bm25_weight: f64,
 
     /// Vector weight in RRF fusion (default: 1.0)

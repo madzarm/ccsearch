@@ -41,7 +41,7 @@ pub struct Config {
 }
 
 fn default_bm25_weight() -> f64 {
-    1.0
+    3.0
 }
 fn default_vec_weight() -> f64 {
     1.0

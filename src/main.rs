@@ -62,7 +62,7 @@ fn main() -> Result<()> {
                 json,
                 exact,
                 semantic,
-                bm25_weight: 1.0,
+                bm25_weight: 3.0,
                 vec_weight: 1.0,
             })
         }
