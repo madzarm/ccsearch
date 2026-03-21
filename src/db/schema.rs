@@ -36,6 +36,28 @@ pub fn create_schema(conn: &Connection) -> Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        -- Conversation chunks for fine-grained search
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            text TEXT NOT NULL DEFAULT '',
+            UNIQUE(session_id, chunk_index)
+        );
+
+        -- FTS5 on chunks for BM25 keyword search
+        -- Column mapping (positional, excluding content_rowid):
+        --   FTS5[0] session_id  -> chunks.session_id
+        --   FTS5[1] chunk_index -> chunks.chunk_index
+        --   FTS5[2] text        -> chunks.text
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+            session_id UNINDEXED,
+            chunk_index UNINDEXED,
+            text,
+            content='chunks',
+            content_rowid='chunk_id'
+        );
         ",
     )?;
 
@@ -61,18 +83,44 @@ pub fn create_schema(conn: &Connection) -> Result<()> {
             INSERT INTO sessions_fts(rowid, session_id, first_prompt, summary, full_text)
             VALUES (new.rowid, new.session_id, new.first_prompt, new.summary, new.full_text);
         END;
+
+        DROP TRIGGER IF EXISTS chunks_ai;
+        CREATE TRIGGER chunks_ai AFTER INSERT ON chunks BEGIN
+            INSERT INTO chunks_fts(rowid, session_id, chunk_index, text)
+            VALUES (new.chunk_id, new.session_id, new.chunk_index, new.text);
+        END;
+
+        DROP TRIGGER IF EXISTS chunks_ad;
+        CREATE TRIGGER chunks_ad AFTER DELETE ON chunks BEGIN
+            INSERT INTO chunks_fts(chunks_fts, rowid, session_id, chunk_index, text)
+            VALUES ('delete', old.chunk_id, old.session_id, old.chunk_index, old.text);
+        END;
+
+        DROP TRIGGER IF EXISTS chunks_au;
+        CREATE TRIGGER chunks_au AFTER UPDATE ON chunks BEGIN
+            INSERT INTO chunks_fts(chunks_fts, rowid, session_id, chunk_index, text)
+            VALUES ('delete', old.chunk_id, old.session_id, old.chunk_index, old.text);
+            INSERT INTO chunks_fts(rowid, session_id, chunk_index, text)
+            VALUES (new.chunk_id, new.session_id, new.chunk_index, new.text);
+        END;
         ",
     )?;
 
     Ok(())
 }
 
-/// Creates the vector embedding table (plain table with blob storage)
+/// Creates the vector embedding tables (plain tables with blob storage)
 pub fn create_vec_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS session_embeddings (
             session_id TEXT PRIMARY KEY,
+            embedding BLOB NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS chunk_embeddings (
+            chunk_id INTEGER PRIMARY KEY,
+            session_id TEXT NOT NULL,
             embedding BLOB NOT NULL
         );
         ",
