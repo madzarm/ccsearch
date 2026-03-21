@@ -89,6 +89,8 @@ jobs:
   update-homebrew:
     needs: release
     runs-on: ubuntu-latest
+    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    continue-on-error: true
     steps:
       - name: Update Homebrew formula
         uses: peter-evans/repository-dispatch@v3
