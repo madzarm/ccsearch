@@ -32,20 +32,20 @@ fn sanitize_fts5_query(query: &str) -> String {
         return String::new();
     }
 
-    // Join words with OR for broader matching
-    // FTS5 uses implicit AND by default, we use OR for better recall
+    // Each word becomes (exact OR prefix*) to catch inflections,
+    // then words are AND-ed together so all terms must be present.
+    // FTS5: adjacent expressions without an operator use implicit AND.
     words
         .iter()
         .map(|w| {
-            // Add prefix matching for short words
             if w.len() >= 3 && !w.ends_with('*') && !w.contains('"') {
-                format!("\"{}\" OR {}*", w, w)
+                format!("(\"{}\" OR {}*)", w, w)
             } else {
                 format!("\"{}\"", w)
             }
         })
         .collect::<Vec<_>>()
-        .join(" OR ")
+        .join(" ")
 }
 
 #[cfg(test)]
