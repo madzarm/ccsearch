@@ -199,12 +199,14 @@ fn extract_snippet(text: &str, query: &str, max_chars: usize) -> String {
     let lower_text = text.to_lowercase();
     let query_terms: Vec<&str> = query.split_whitespace().collect();
 
-    // Find first occurrence of any query term
-    let mut best_pos = None;
-    for term in &query_terms {
-        if let Some(pos) = lower_text.find(&term.to_lowercase()) {
-            if best_pos.is_none() || pos < best_pos.unwrap() {
-                best_pos = Some(pos);
+    // Try to find the full phrase first, then fall back to individual terms
+    let mut best_pos = lower_text.find(&query.to_lowercase());
+    if best_pos.is_none() {
+        for term in &query_terms {
+            if let Some(pos) = lower_text.find(&term.to_lowercase()) {
+                if best_pos.is_none() || pos < best_pos.unwrap() {
+                    best_pos = Some(pos);
+                }
             }
         }
     }
