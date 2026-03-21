@@ -69,6 +69,40 @@ impl Database {
         queries::upsert_embedding(&self.conn, session_id, embedding)
     }
 
+    pub fn delete_session_chunks(&self, session_id: &str) -> Result<()> {
+        queries::delete_session_chunks(&self.conn, session_id)
+    }
+
+    pub fn insert_chunk(
+        &self,
+        session_id: &str,
+        chunk_index: i32,
+        text: &str,
+    ) -> Result<i64> {
+        queries::insert_chunk(&self.conn, session_id, chunk_index, text)
+    }
+
+    pub fn delete_session_chunk_embeddings(&self, session_id: &str) -> Result<()> {
+        queries::delete_session_chunk_embeddings(&self.conn, session_id)
+    }
+
+    pub fn upsert_chunk_embedding(
+        &self,
+        chunk_id: i64,
+        session_id: &str,
+        embedding: &[f32],
+    ) -> Result<()> {
+        queries::upsert_chunk_embedding(&self.conn, chunk_id, session_id, embedding)
+    }
+
+    pub fn get_best_matching_chunk(
+        &self,
+        fts_query: &str,
+        session_id: &str,
+    ) -> Result<Option<String>> {
+        queries::get_best_matching_chunk(&self.conn, fts_query, session_id)
+    }
+
     pub fn get_session_mtime(&self, session_id: &str) -> Result<Option<i64>> {
         queries::get_session_mtime(&self.conn, session_id)
     }
