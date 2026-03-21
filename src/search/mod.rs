@@ -48,8 +48,12 @@ pub fn hybrid_search(
 
     let now = chrono::Utc::now();
 
-    // Build FTS5 query for chunk text retrieval
-    let fts_query = bm25::build_fts5_query(query);
+    // Build FTS5 query for chunk text retrieval (match the search mode)
+    let fts_query = if exact {
+        format!("\"{}\"", query.trim())
+    } else {
+        bm25::build_fts5_query(query)
+    };
 
     // Fetch full session data and apply recency boost
     let mut results = Vec::new();
