@@ -27,23 +27,41 @@ fn main() -> Result<()> {
             Commands::Config => cmd_config(),
         },
         Err(_) => {
-            // If subcommand parsing fails, treat all args as a search query
+            // If subcommand parsing fails, treat non-flag args as a search query
             let args: Vec<String> = std::env::args().skip(1).collect();
             if args.is_empty() || args[0].starts_with('-') {
-                // No query or flag-only — show help
                 Cli::parse();
                 unreachable!()
             }
-            let query = args.join(" ");
+            let mut exact = false;
+            let mut semantic = false;
+            let mut no_tui = false;
+            let mut json = false;
+            let mut query_parts = Vec::new();
+            for arg in &args {
+                match arg.as_str() {
+                    "--exact" => exact = true,
+                    "--semantic" => semantic = true,
+                    "--no-tui" => no_tui = true,
+                    "--json" => json = true,
+                    _ if !arg.starts_with('-') => query_parts.push(arg.as_str()),
+                    _ => {} // ignore unknown flags
+                }
+            }
+            if query_parts.is_empty() {
+                Cli::parse();
+                unreachable!()
+            }
+            let query = query_parts.join(" ");
             cmd_search(cli::SearchArgs {
                 query,
                 days: 30,
                 project: None,
                 limit: 20,
-                no_tui: false,
-                json: false,
-                exact: false,
-                semantic: false,
+                no_tui,
+                json,
+                exact,
+                semantic,
                 bm25_weight: 1.0,
                 vec_weight: 1.0,
             })
