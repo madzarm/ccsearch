@@ -5,14 +5,18 @@ use crate::db::Database;
 
 /// Performs BM25 keyword search using SQLite FTS5
 pub fn search(db: &Database, query: &str, limit: usize) -> Result<Vec<FtsResult>> {
-    // FTS5 query syntax: we need to escape special characters
-    let sanitized = sanitize_fts5_query(query);
+    let sanitized = build_fts5_query(query);
 
     if sanitized.is_empty() {
         return Ok(Vec::new());
     }
 
     db.fts_search(&sanitized, limit)
+}
+
+/// Builds a valid FTS5 MATCH query from a natural language query string.
+pub fn build_fts5_query(query: &str) -> String {
+    sanitize_fts5_query(query)
 }
 
 /// Sanitizes a query string for FTS5 MATCH syntax.
