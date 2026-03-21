@@ -321,8 +321,7 @@ impl<'a> Indexer<'a> {
         jsonl_path: &Path,
         decoded_path: &str,
     ) -> Result<()> {
-        let parsed =
-            parser::parse_conversation_jsonl(jsonl_path, self.config.max_text_chars)?;
+        let parsed = parser::parse_conversation_jsonl(jsonl_path)?;
 
         let mtime = parser::file_mtime(jsonl_path)?;
         let now = chrono::Utc::now().to_rfc3339();
@@ -347,13 +346,21 @@ impl<'a> Indexer<'a> {
             .or(parsed.last_timestamp)
             .unwrap_or_else(|| mtime_rfc3339);
 
+        // Truncate full_text for the sessions table (metadata/preview)
+        let truncated_full_text: String = parsed
+            .full_text
+            .chars()
+            .take(self.config.max_text_chars)
+            .collect();
+
         let session = ParsedSession {
             session_id: entry.session_id.clone(),
             project_path: entry
                 .project_path
                 .clone()
                 .unwrap_or_else(|| decoded_path.to_string()),
-            first_prompt: parsed.first_prompt
+            first_prompt: parsed
+                .first_prompt
                 .or_else(|| entry.first_prompt.clone())
                 .or_else(|| entry.summary.clone()),
             summary: entry.summary.clone(),
@@ -362,13 +369,41 @@ impl<'a> Indexer<'a> {
             message_count: entry.message_count.unwrap_or(parsed.message_count),
             created_at,
             modified_at,
-            full_text: parsed.full_text,
+            full_text: truncated_full_text,
         };
 
-        // Store in DB
+        // Store session metadata in DB
         self.db.upsert_session(&session, mtime, &now)?;
 
-        // Generate and store embedding if embedder is available
+        // Chunk the full conversation text and store chunks
+        let chunks = parser::chunk_text(
+            &parsed.full_text,
+            self.config.chunk_size,
+            self.config.chunk_overlap,
+        );
+
+        // Clear old chunks and embeddings for this session
+        self.db.delete_session_chunks(&session.session_id)?;
+        self.db
+            .delete_session_chunk_embeddings(&session.session_id)?;
+
+        // Insert chunks and generate per-chunk embeddings
+        for (i, chunk_text) in chunks.iter().enumerate() {
+            let chunk_id =
+                self.db
+                    .insert_chunk(&session.session_id, i as i32, chunk_text)?;
+
+            if let Some(ref mut embedder) = self.embedder {
+                let embedding = embedder.embed(chunk_text)?;
+                self.db.upsert_chunk_embedding(
+                    chunk_id,
+                    &session.session_id,
+                    &embedding,
+                )?;
+            }
+        }
+
+        // Also keep session-level embedding for backward compatibility
         if let Some(ref mut embedder) = self.embedder {
             let text_for_embedding = build_embedding_text(&session);
             let embedding = embedder.embed(&text_for_embedding)?;
@@ -379,7 +414,7 @@ impl<'a> Indexer<'a> {
     }
 }
 
-/// Builds the text to embed, prioritizing summary and first prompt
+/// Builds the text to embed at session level, prioritizing summary and first prompt
 fn build_embedding_text(session: &ParsedSession) -> String {
     let mut parts = Vec::new();
 
@@ -390,7 +425,6 @@ fn build_embedding_text(session: &ParsedSession) -> String {
         parts.push(first_prompt.clone());
     }
     if !session.full_text.is_empty() {
-        // Take first portion of full text (char-safe truncation)
         let truncated: String = session.full_text.chars().take(2000).collect();
         parts.push(truncated);
     }
