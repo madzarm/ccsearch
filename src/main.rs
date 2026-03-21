@@ -42,6 +42,8 @@ fn main() -> Result<()> {
                 limit: 20,
                 no_tui: false,
                 json: false,
+                exact: false,
+                semantic: false,
                 bm25_weight: 1.0,
                 vec_weight: 1.0,
             })
@@ -64,14 +66,30 @@ fn cmd_search(args: cli::SearchArgs) -> Result<()> {
         }
     }
 
+    // Apply --exact / --semantic overrides
+    let (bm25_weight, vec_weight) = if args.exact {
+        (args.bm25_weight, 0.0)
+    } else if args.semantic {
+        (0.0, args.vec_weight)
+    } else {
+        (args.bm25_weight, args.vec_weight)
+    };
+
+    // Skip loading embedder entirely for --exact
+    let effective_embedder = if args.exact {
+        None
+    } else {
+        embedder.as_mut()
+    };
+
     // Perform hybrid search
     let results = search::hybrid_search(
         &db,
-        embedder.as_mut(),
+        effective_embedder,
         &args.query,
         args.limit,
-        args.bm25_weight,
-        args.vec_weight,
+        bm25_weight,
+        vec_weight,
         config.rrf_k,
         config.recency_halflife,
         &config.exclude_projects,
