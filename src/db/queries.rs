@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 
 use crate::indexer::parser::ParsedSession;
 
@@ -85,6 +86,77 @@ pub fn upsert_embedding(conn: &Connection, session_id: &str, embedding: &[f32]) 
     Ok(())
 }
 
+/// Deletes all chunks for a session (triggers FTS cleanup via trigger)
+pub fn delete_session_chunks(conn: &Connection, session_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM chunks WHERE session_id = ?1",
+        params![session_id],
+    )?;
+    Ok(())
+}
+
+/// Inserts a single chunk and returns its chunk_id
+pub fn insert_chunk(
+    conn: &Connection,
+    session_id: &str,
+    chunk_index: i32,
+    text: &str,
+) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO chunks (session_id, chunk_index, text) VALUES (?1, ?2, ?3)",
+        params![session_id, chunk_index, text],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Deletes all chunk embeddings for a session
+pub fn delete_session_chunk_embeddings(conn: &Connection, session_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM chunk_embeddings WHERE session_id = ?1",
+        params![session_id],
+    )?;
+    Ok(())
+}
+
+/// Inserts a chunk embedding
+pub fn upsert_chunk_embedding(
+    conn: &Connection,
+    chunk_id: i64,
+    session_id: &str,
+    embedding: &[f32],
+) -> Result<()> {
+    let bytes = embedding_to_bytes(embedding);
+    conn.execute(
+        "INSERT OR REPLACE INTO chunk_embeddings (chunk_id, session_id, embedding) VALUES (?1, ?2, ?3)",
+        params![chunk_id, session_id, bytes],
+    )?;
+    Ok(())
+}
+
+/// Gets the best matching chunk text for a session given a FTS5 query
+pub fn get_best_matching_chunk(
+    conn: &Connection,
+    fts_query: &str,
+    session_id: &str,
+) -> Result<Option<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.text
+         FROM chunks_fts f
+         JOIN chunks c ON c.chunk_id = f.rowid
+         WHERE chunks_fts MATCH ?1 AND f.session_id = ?2
+         ORDER BY f.rank
+         LIMIT 1",
+    )?;
+
+    let result = stmt
+        .query_row(params![fts_query, session_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?;
+
+    Ok(result)
+}
+
 /// Gets the stored file_mtime for a session (for staleness detection)
 pub fn get_session_mtime(conn: &Connection, session_id: &str) -> Result<Option<i64>> {
     let mut stmt = conn.prepare("SELECT file_mtime FROM sessions WHERE session_id = ?1")?;
@@ -94,8 +166,46 @@ pub fn get_session_mtime(conn: &Connection, session_id: &str) -> Result<Option<i
     Ok(result)
 }
 
-/// BM25 full-text search using FTS5
+/// BM25 full-text search using FTS5.
+/// Uses chunk-based search if chunks are available, falls back to session-level.
 pub fn fts_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<FtsResult>> {
+    let has_chunks: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chunks LIMIT 1)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if has_chunks {
+        // Search chunks, group by session_id (best rank per session)
+        let mut stmt = conn.prepare(
+            "SELECT session_id, MIN(rank) as best_rank
+             FROM chunks_fts
+             WHERE chunks_fts MATCH ?1
+             GROUP BY session_id
+             ORDER BY best_rank
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![query, limit as i64], |row| {
+            Ok(FtsResult {
+                session_id: row.get(0)?,
+                rank: row.get(1)?,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            match row {
+                Ok(r) => results.push(r),
+                Err(e) => log::warn!("FTS chunk query error: {}", e),
+            }
+        }
+        return Ok(results);
+    }
+
+    // Fall back to session-level search
     let mut stmt = conn.prepare(
         "SELECT session_id, rank
          FROM sessions_fts
@@ -122,12 +232,61 @@ pub fn fts_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Ft
     Ok(results)
 }
 
-/// Vector similarity search — loads all embeddings and computes cosine similarity in Rust
+/// Vector similarity search — loads embeddings and computes cosine similarity in Rust.
+/// Uses chunk embeddings if available, falls back to session embeddings.
 pub fn vec_search(
     conn: &Connection,
     query_embedding: &[f32],
     limit: usize,
 ) -> Result<Vec<VecResult>> {
+    let has_chunk_embeddings: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chunk_embeddings LIMIT 1)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if has_chunk_embeddings {
+        let mut stmt =
+            conn.prepare("SELECT session_id, embedding FROM chunk_embeddings")?;
+
+        let rows = stmt.query_map([], |row| {
+            let session_id: String = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            Ok((session_id, blob))
+        })?;
+
+        // Compute similarity for each chunk, keep best per session
+        let mut best_per_session: HashMap<String, f64> = HashMap::new();
+        for row in rows {
+            match row {
+                Ok((session_id, blob)) => {
+                    let embedding = bytes_to_embedding(&blob);
+                    let sim = cosine_similarity(query_embedding, &embedding);
+                    let entry = best_per_session.entry(session_id).or_insert(f64::MIN);
+                    if sim > *entry {
+                        *entry = sim;
+                    }
+                }
+                Err(e) => log::warn!("Vec chunk query row error: {}", e),
+            }
+        }
+
+        let mut scored: Vec<(String, f64)> = best_per_session.into_iter().collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+
+        return Ok(scored
+            .into_iter()
+            .map(|(session_id, sim)| VecResult {
+                session_id,
+                distance: 1.0 - sim,
+            })
+            .collect());
+    }
+
+    // Fall back to session-level embeddings
     let mut stmt = conn.prepare("SELECT session_id, embedding FROM session_embeddings")?;
 
     let rows = stmt.query_map([], |row| {
@@ -148,7 +307,6 @@ pub fn vec_search(
         }
     }
 
-    // Sort by similarity descending (highest = most similar)
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(limit);
 
@@ -156,7 +314,7 @@ pub fn vec_search(
         .into_iter()
         .map(|(session_id, sim)| VecResult {
             session_id,
-            distance: 1.0 - sim, // convert similarity to distance for consistency
+            distance: 1.0 - sim,
         })
         .collect())
 }
