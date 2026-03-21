@@ -196,13 +196,12 @@ pub fn render_help_bar(f: &mut Frame, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
-/// Splits a line into owned spans, highlighting all case-insensitive occurrences of the query.
-/// Tries the full phrase first, then falls back to highlighting individual words.
+/// Splits a line into owned spans, highlighting case-insensitive occurrences
+/// of the full query phrase. Only highlights exact phrase matches.
 fn highlight_query_in_line(line: &str, query: &str) -> Vec<Span<'static>> {
     let lower_line = line.to_lowercase();
     let lower_query = query.to_lowercase();
 
-    // Collect all match positions for the full phrase
     let mut matches: Vec<(usize, usize)> = Vec::new();
     let mut search_from = 0;
     while let Some(pos) = lower_line[search_from..].find(&lower_query) {
@@ -210,26 +209,6 @@ fn highlight_query_in_line(line: &str, query: &str) -> Vec<Span<'static>> {
         let end = start + lower_query.len();
         matches.push((start, end));
         search_from = end;
-    }
-
-    // If no phrase matches, try individual words (3+ chars)
-    if matches.is_empty() {
-        let words: Vec<String> = query
-            .split_whitespace()
-            .filter(|w| w.len() >= 3)
-            .map(|w| w.to_lowercase())
-            .collect();
-        for word in &words {
-            search_from = 0;
-            while let Some(pos) = lower_line[search_from..].find(word.as_str()) {
-                let start = search_from + pos;
-                let end = start + word.len();
-                matches.push((start, end));
-                search_from = end;
-            }
-        }
-        matches.sort_by_key(|m| m.0);
-        matches.dedup();
     }
 
     if matches.is_empty() {
