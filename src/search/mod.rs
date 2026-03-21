@@ -16,6 +16,8 @@ pub struct SearchResult {
     pub bm25_rank: Option<usize>,
     pub vec_rank: Option<usize>,
     pub session: SessionRow,
+    /// The best matching chunk text for this session (if chunk-based search was used)
+    pub matched_text: Option<String>,
 }
 
 /// Performs hybrid search: BM25 + vector + RRF fusion + recency boost
@@ -30,10 +32,10 @@ pub fn hybrid_search(
     recency_halflife: f64,
     exclude_projects: &[String],
 ) -> Result<Vec<SearchResult>> {
-    // BM25 search
+    // BM25 search (uses chunks if available, falls back to sessions)
     let bm25_results = bm25::search(db, query, limit * 2)?;
 
-    // Vector search (if embedder available)
+    // Vector search (uses chunk embeddings if available, falls back to session embeddings)
     let vec_results = if let Some(embedder) = embedder {
         vector::search(db, embedder, query, limit * 2)?
     } else {
@@ -45,13 +47,19 @@ pub fn hybrid_search(
 
     let now = chrono::Utc::now();
 
+    // Build FTS5 query for chunk text retrieval
+    let fts_query = bm25::build_fts5_query(query);
+
     // Fetch full session data and apply recency boost
     let mut results = Vec::new();
     for rrf_result in fused.into_iter().take(limit * 2) {
         if let Ok(Some(session)) = db.get_session(&rrf_result.session_id) {
             // Skip excluded projects
             if exclude_projects.iter().any(|ex| {
-                session.project_path.to_lowercase().contains(&ex.to_lowercase())
+                session
+                    .project_path
+                    .to_lowercase()
+                    .contains(&ex.to_lowercase())
             }) {
                 continue;
             }
@@ -66,12 +74,21 @@ pub fn hybrid_search(
                 rrf_result.score
             };
 
+            // Get the best matching chunk text for preview
+            let matched_text = if !fts_query.is_empty() {
+                db.get_best_matching_chunk(&fts_query, &rrf_result.session_id)
+                    .unwrap_or(None)
+            } else {
+                None
+            };
+
             results.push(SearchResult {
                 session_id: rrf_result.session_id,
                 score,
                 bm25_rank: rrf_result.bm25_rank,
                 vec_rank: rrf_result.vec_rank,
                 session,
+                matched_text,
             });
         }
     }
