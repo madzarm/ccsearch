@@ -4,8 +4,12 @@ use crate::db::queries::FtsResult;
 use crate::db::Database;
 
 /// Performs BM25 keyword search using SQLite FTS5
-pub fn search(db: &Database, query: &str, limit: usize) -> Result<Vec<FtsResult>> {
-    let sanitized = build_fts5_query(query);
+pub fn search(db: &Database, query: &str, limit: usize, exact: bool) -> Result<Vec<FtsResult>> {
+    let sanitized = if exact {
+        build_fts5_phrase(query)
+    } else {
+        build_fts5_query(query)
+    };
 
     if sanitized.is_empty() {
         return Ok(Vec::new());
@@ -15,14 +19,8 @@ pub fn search(db: &Database, query: &str, limit: usize) -> Result<Vec<FtsResult>
 }
 
 /// Builds a valid FTS5 MATCH query from a natural language query string.
+/// Splits into words, each gets exact+prefix matching, AND-ed together.
 pub fn build_fts5_query(query: &str) -> String {
-    sanitize_fts5_query(query)
-}
-
-/// Sanitizes a query string for FTS5 MATCH syntax.
-/// Converts natural language queries into valid FTS5 queries.
-fn sanitize_fts5_query(query: &str) -> String {
-    // Split into words and join with implicit AND
     let words: Vec<&str> = query
         .split(|c: char| !c.is_alphanumeric() && c != '*' && c != '"')
         .filter(|w| !w.is_empty())
@@ -32,9 +30,6 @@ fn sanitize_fts5_query(query: &str) -> String {
         return String::new();
     }
 
-    // Each word becomes (exact OR prefix*) to catch inflections,
-    // then words are AND-ed together so all terms must be present.
-    // FTS5: adjacent expressions without an operator use implicit AND.
     words
         .iter()
         .map(|w| {
@@ -45,7 +40,16 @@ fn sanitize_fts5_query(query: &str) -> String {
             }
         })
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" AND ")
+}
+
+/// Builds an exact phrase FTS5 query — matches the literal token sequence.
+fn build_fts5_phrase(query: &str) -> String {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    format!("\"{}\"", trimmed)
 }
 
 #[cfg(test)]
@@ -53,23 +57,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sanitize_simple_query() {
-        let result = sanitize_fts5_query("authentication bug");
+    fn test_query_simple() {
+        let result = build_fts5_query("authentication bug");
         assert!(result.contains("authentication"));
         assert!(result.contains("bug"));
+        assert!(result.contains("AND"));
     }
 
     #[test]
-    fn test_sanitize_empty_query() {
-        assert_eq!(sanitize_fts5_query(""), "");
-        assert_eq!(sanitize_fts5_query("   "), "");
+    fn test_query_empty() {
+        assert_eq!(build_fts5_query(""), "");
+        assert_eq!(build_fts5_query("   "), "");
     }
 
     #[test]
-    fn test_sanitize_special_chars() {
-        let result = sanitize_fts5_query("fix: auth-bug (urgent)");
-        // Should handle special chars without crashing
+    fn test_query_special_chars() {
+        let result = build_fts5_query("fix: auth-bug (urgent)");
         assert!(result.contains("fix"));
         assert!(result.contains("auth"));
+    }
+
+    #[test]
+    fn test_phrase_exact() {
+        assert_eq!(build_fts5_phrase("phase 1"), "\"phase 1\"");
+        assert_eq!(build_fts5_phrase(""), "");
     }
 }
