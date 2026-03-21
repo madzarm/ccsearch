@@ -52,6 +52,14 @@ pub struct SearchArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Use only exact keyword search (BM25), no semantic
+    #[arg(long, conflicts_with = "semantic")]
+    pub exact: bool,
+
+    /// Use only semantic vector search, no keyword matching
+    #[arg(long, conflicts_with = "exact")]
+    pub semantic: bool,
+
     /// BM25 weight in RRF fusion (default: 1.0)
     #[arg(long, default_value_t = 1.0)]
     pub bm25_weight: f64,
