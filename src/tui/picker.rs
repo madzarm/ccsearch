@@ -153,7 +153,9 @@ pub fn render_preview(f: &mut Frame, area: Rect, result: Option<&SearchResult>, 
             };
             lines.push(Line::from(Span::styled(label, Theme::subtitle())));
             for line in snippet.lines() {
-                lines.push(Line::from(format!("  {}", line)));
+                let mut spans = vec![Span::raw("  ".to_string())];
+                spans.extend(highlight_query_in_line(line, query));
+                lines.push(Line::from(spans));
             }
         }
 
@@ -192,6 +194,67 @@ pub fn render_help_bar(f: &mut Frame, area: Rect) {
 
     let paragraph = Paragraph::new(help).style(Theme::status_bar());
     f.render_widget(paragraph, area);
+}
+
+/// Splits a line into owned spans, highlighting all case-insensitive occurrences of the query.
+/// Tries the full phrase first, then falls back to highlighting individual words.
+fn highlight_query_in_line(line: &str, query: &str) -> Vec<Span<'static>> {
+    let lower_line = line.to_lowercase();
+    let lower_query = query.to_lowercase();
+
+    // Collect all match positions for the full phrase
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    let mut search_from = 0;
+    while let Some(pos) = lower_line[search_from..].find(&lower_query) {
+        let start = search_from + pos;
+        let end = start + lower_query.len();
+        matches.push((start, end));
+        search_from = end;
+    }
+
+    // If no phrase matches, try individual words (3+ chars)
+    if matches.is_empty() {
+        let words: Vec<String> = query
+            .split_whitespace()
+            .filter(|w| w.len() >= 3)
+            .map(|w| w.to_lowercase())
+            .collect();
+        for word in &words {
+            search_from = 0;
+            while let Some(pos) = lower_line[search_from..].find(word.as_str()) {
+                let start = search_from + pos;
+                let end = start + word.len();
+                matches.push((start, end));
+                search_from = end;
+            }
+        }
+        matches.sort_by_key(|m| m.0);
+        matches.dedup();
+    }
+
+    if matches.is_empty() {
+        return vec![Span::raw(line.to_string())];
+    }
+
+    // Build spans: normal text interspersed with highlighted matches
+    let mut spans = Vec::new();
+    let mut cursor = 0;
+    for (start, end) in &matches {
+        if *start > cursor {
+            spans.push(Span::raw(line[cursor..*start].to_string()));
+        }
+        if *start >= cursor {
+            spans.push(Span::styled(
+                line[*start..*end].to_string(),
+                Theme::highlight(),
+            ));
+            cursor = *end;
+        }
+    }
+    if cursor < line.len() {
+        spans.push(Span::raw(line[cursor..].to_string()));
+    }
+    spans
 }
 
 /// Extracts a snippet around query terms with context
