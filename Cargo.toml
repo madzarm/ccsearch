@@ -1,6 +1,6 @@
 [package]
 name = "ccsearch"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 description = "Hybrid search CLI for Claude Code chat sessions (BM25 + vector embeddings + RRF)"
 license = "MIT"
