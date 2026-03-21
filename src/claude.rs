@@ -39,41 +39,70 @@ pub fn discover_session_indices() -> Result<Vec<PathBuf>> {
     Ok(indices)
 }
 
-/// Discovers all .jsonl session files under ~/.claude/projects/ directly.
-/// Returns a map of session_id -> (jsonl_path, project_dir_encoded_name)
+/// Discovers all .jsonl session files under ~/.claude/projects/ directly,
+/// including agent session files in subagent directories.
+/// Returns a map of unique_id -> (jsonl_path, project_dir_encoded_name)
 pub fn discover_all_session_files() -> Result<HashMap<String, (PathBuf, String)>> {
     let projects_dir = claude_projects_dir()?;
-    let pattern = projects_dir
+
+    // Pattern 1: Top-level session files (UUIDs)
+    let top_pattern = projects_dir
         .join("*")
         .join("*.jsonl")
         .to_string_lossy()
         .to_string();
 
+    // Pattern 2: Agent session files in subagent directories
+    // Structure: projects/<encoded-project>/<session-uuid>/subagents/agent-*.jsonl
+    let agent_pattern = projects_dir
+        .join("*")
+        .join("*")
+        .join("subagents")
+        .join("*.jsonl")
+        .to_string_lossy()
+        .to_string();
+
     let mut sessions = HashMap::new();
-    for entry in glob(&pattern).context("Failed to glob session files")? {
-        match entry {
-            Ok(path) => {
-                let filename = match path.file_stem().and_then(|s| s.to_str()) {
-                    Some(f) => f.to_string(),
-                    None => continue,
-                };
-                // Skip non-session files (agent files start with "agent-")
-                if filename.starts_with("agent-") {
-                    continue;
+
+    for pattern in &[&top_pattern, &agent_pattern] {
+        for entry in glob(pattern).context("Failed to glob session files")? {
+            match entry {
+                Ok(path) => {
+                    let filename = match path.file_stem().and_then(|s| s.to_str()) {
+                        Some(f) => f.to_string(),
+                        None => continue,
+                    };
+
+                    // For top-level files: must look like a UUID
+                    let is_agent_file = filename.starts_with("agent-");
+                    if !is_agent_file && (filename.len() < 32 || !filename.contains('-')) {
+                        continue;
+                    }
+
+                    // Determine the project directory name
+                    // For agents: path is <projects>/<encoded>/<session>/subagents/<agent>.jsonl
+                    // For sessions: path is <projects>/<encoded>/<session>.jsonl
+                    let encoded_name = if is_agent_file {
+                        // Go up 3 levels: file -> subagents -> session_dir -> project_dir
+                        path.parent() // subagents/
+                            .and_then(|p| p.parent()) // session_dir/
+                            .and_then(|p| p.parent()) // project_dir/
+                            .and_then(|p| p.file_name())
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    } else {
+                        path.parent()
+                            .and_then(|p| p.file_name())
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    };
+
+                    // Use filename as unique key (agent files have unique names)
+                    sessions.insert(filename, (path, encoded_name));
                 }
-                // Session IDs are UUIDs — quick sanity check
-                if filename.len() < 32 || !filename.contains('-') {
-                    continue;
+                Err(e) => {
+                    log::warn!("Error reading glob entry: {}", e);
                 }
-                let encoded_name = path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                sessions.insert(filename, (path, encoded_name));
-            }
-            Err(e) => {
-                log::warn!("Error reading glob entry: {}", e);
             }
         }
     }
